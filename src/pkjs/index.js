@@ -1,4 +1,4 @@
-var SETTINGS_KEY = "box-minutes-settings";
+var SETTINGS_KEY = "pebble-minute-blocks-settings";
 
 var DEFAULT_SETTINGS = {
   BackgroundColor: 0x000000,
@@ -145,7 +145,7 @@ function buildConfigHtml(settings) {
     "</style>",
     "</head>",
     "<body>",
-    "<h1>Box Minutes</h1>",
+    "<h1>Minute Blocks</h1>",
     field("Background", "background", settings.BackgroundColor),
     field("Ring", "ring", settings.RingColor),
     field("Complications", "complication", settings.ComplicationColor),

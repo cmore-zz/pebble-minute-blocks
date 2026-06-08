@@ -1,4 +1,4 @@
-# Box Minutes
+# Pebble Minute Blocks
 
 A Pebble C watchface with twelve five-minute markers around the edge, each
 starting as four tiny dots. As the current five-minute block advances, the dots

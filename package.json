@@ -1,5 +1,5 @@
 {
-  "name": "pebble-box-minutes",
+  "name": "pebble-minute-blocks",
   "author": "cmore",
   "version": "0.1.0",
   "keywords": [
@@ -8,7 +8,7 @@
   "private": true,
   "dependencies": {},
   "pebble": {
-    "displayName": "Box Minutes",
+    "displayName": "Minute Blocks",
     "uuid": "4e10c644-2684-4604-aaf3-be90703b8d95",
     "sdkVersion": "3",
     "enableMultiJS": true,

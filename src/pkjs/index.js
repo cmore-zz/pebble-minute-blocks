@@ -6,6 +6,7 @@ var DEFAULT_SETTINGS = {
   ComplicationColor: 0xFFFFFF,
   HourColor: 0xFFFFFF,
   TimeMode: 0,
+  ComplicationSize: 0,
   WeatherEnabled: 1,
   WeatherUnits: 0
 };
@@ -17,6 +18,7 @@ function cloneDefaults() {
     ComplicationColor: DEFAULT_SETTINGS.ComplicationColor,
     HourColor: DEFAULT_SETTINGS.HourColor,
     TimeMode: DEFAULT_SETTINGS.TimeMode,
+    ComplicationSize: DEFAULT_SETTINGS.ComplicationSize,
     WeatherEnabled: DEFAULT_SETTINGS.WeatherEnabled,
     WeatherUnits: DEFAULT_SETTINGS.WeatherUnits
   };
@@ -156,6 +158,12 @@ function buildConfigHtml(settings) {
     "<option value=\"1\"" + (settings.TimeMode === 1 ? " selected" : "") + ">12 hour</option>",
     "<option value=\"2\"" + (settings.TimeMode === 2 ? " selected" : "") + ">24 hour</option>",
     "</select>",
+    "<label for=\"complicationSize\">Complication size</label>",
+    "<select id=\"complicationSize\">",
+    "<option value=\"0\"" + (settings.ComplicationSize === 0 ? " selected" : "") + ">Normal</option>",
+    "<option value=\"1\"" + (settings.ComplicationSize === 1 ? " selected" : "") + ">Medium</option>",
+    "<option value=\"2\"" + (settings.ComplicationSize === 2 ? " selected" : "") + ">Large</option>",
+    "</select>",
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -177,6 +185,7 @@ function buildConfigHtml(settings) {
     "ComplicationColor:parseInt(document.getElementById('complication').value.slice(1),16),",
     "HourColor:parseInt(document.getElementById('hour').value.slice(1),16),",
     "TimeMode:parseInt(document.getElementById('timeMode').value,10),",
+    "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
     "WeatherEnabled:document.getElementById('weatherEnabled').checked?1:0,",
     "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10)",
     "};",
@@ -210,6 +219,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationColor = numberFromHex(hexFromNumber(settings.ComplicationColor));
     settings.HourColor = numberFromHex(hexFromNumber(settings.HourColor));
     settings.TimeMode = Number(settings.TimeMode);
+    settings.ComplicationSize = Number(settings.ComplicationSize);
     settings.WeatherEnabled = settings.WeatherEnabled ? 1 : 0;
     settings.WeatherUnits = Number(settings.WeatherUnits);
     saveSettings(settings);

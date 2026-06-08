@@ -36,16 +36,23 @@ enum {
 };
 
 enum {
+  ComplicationSizeNormal = 0,
+  ComplicationSizeMedium = 1,
+  ComplicationSizeLarge = 2,
+};
+
+enum {
   ConfigKeyBackgroundColor = 10000,
   ConfigKeyRingColor = 10001,
   ConfigKeyComplicationColor = 10002,
   ConfigKeyHourColor = 10003,
   ConfigKeyTimeMode = 10004,
-  ConfigKeyWeatherEnabled = 10005,
-  ConfigKeyWeatherUnits = 10006,
-  ConfigKeyWeatherTemp = 10007,
-  ConfigKeyWeatherAvailable = 10008,
-  ConfigKeyWeatherRequest = 10009,
+  ConfigKeyComplicationSize = 10005,
+  ConfigKeyWeatherEnabled = 10006,
+  ConfigKeyWeatherUnits = 10007,
+  ConfigKeyWeatherTemp = 10008,
+  ConfigKeyWeatherAvailable = 10009,
+  ConfigKeyWeatherRequest = 10010,
 };
 
 enum {
@@ -55,6 +62,7 @@ enum {
   PersistKeyComplicationColor,
   PersistKeyHourColor,
   PersistKeyTimeMode,
+  PersistKeyComplicationSize,
   PersistKeyWeatherEnabled,
   PersistKeyWeatherUnits,
   PersistKeyWeatherTemp,
@@ -72,6 +80,7 @@ typedef struct {
   uint32_t complication_color;
   uint32_t hour_color;
   int time_mode;
+  int complication_size;
   bool weather_enabled;
   int weather_units;
   int weather_temp;
@@ -194,6 +203,17 @@ static void draw_center_complications(GContext *ctx, GRect bounds) {
   char battery_text[8];
   char bluetooth_text[4];
   char weather_text[8];
+  bool medium = s_settings.complication_size == ComplicationSizeMedium;
+  bool large = s_settings.complication_size == ComplicationSizeLarge;
+  GFont font = fonts_get_system_font(large ? FONT_KEY_GOTHIC_24_BOLD :
+                                     medium ? FONT_KEY_GOTHIC_18_BOLD :
+                                     FONT_KEY_GOTHIC_14_BOLD);
+  int16_t row_height = large ? 28 : medium ? 22 : 18;
+  int16_t bottom_y = bounds.size.h - (large ? 30 : medium ? 24 : 20);
+  int16_t date_width = large ? 86 : medium ? 72 : 58;
+  int16_t weather_width = large ? 66 : medium ? 58 : 44;
+  int16_t battery_width = large ? 66 : medium ? 52 : 41;
+  int16_t bluetooth_width = large ? 48 : medium ? 38 : 34;
 
   strftime(date_text, sizeof(date_text), "%a %d", &s_time);
   snprintf(battery_text, sizeof(battery_text), "%d%%", s_battery_state.charge_percent);
@@ -208,22 +228,22 @@ static void draw_center_complications(GContext *ctx, GRect bounds) {
   }
 
   graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
-  graphics_draw_text(ctx, date_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     GRect(4, 0, 58, 18),
+  graphics_draw_text(ctx, date_text, font,
+                     GRect(4, 0, date_width, row_height),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 
   if (s_settings.weather_enabled) {
-    graphics_draw_text(ctx, weather_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                       GRect(bounds.size.w - 48, 0, 44, 18),
+    graphics_draw_text(ctx, weather_text, font,
+                       GRect(bounds.size.w - weather_width - 4, 0, weather_width, row_height),
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
   }
 
-  graphics_draw_text(ctx, battery_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     GRect(bounds.size.w - 45, bounds.size.h - 20, 41, 18),
+  graphics_draw_text(ctx, battery_text, font,
+                     GRect(bounds.size.w - battery_width - 4, bottom_y, battery_width, row_height),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
 
-  graphics_draw_text(ctx, bluetooth_text, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
-                     GRect(4, bounds.size.h - 20, 34, 18),
+  graphics_draw_text(ctx, bluetooth_text, font,
+                     GRect(4, bottom_y, bluetooth_width, row_height),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
@@ -260,6 +280,7 @@ static void settings_load(void) {
       .complication_color = SETTINGS_DEFAULT_COMPLICATION,
       .hour_color = SETTINGS_DEFAULT_HOUR,
       .time_mode = TimeModeWatch,
+      .complication_size = ComplicationSizeNormal,
       .weather_enabled = true,
       .weather_units = WeatherUnitsF,
       .weather_temp = 0,
@@ -275,6 +296,9 @@ static void settings_load(void) {
   s_settings.hour_color = persist_read_color(PersistKeyHourColor, SETTINGS_DEFAULT_HOUR);
   s_settings.time_mode = persist_exists(PersistKeyTimeMode) ?
                          persist_read_int(PersistKeyTimeMode) : TimeModeWatch;
+  s_settings.complication_size = persist_exists(PersistKeyComplicationSize) ?
+                                 persist_read_int(PersistKeyComplicationSize) :
+                                 ComplicationSizeNormal;
   s_settings.weather_enabled = !persist_exists(PersistKeyWeatherEnabled) ||
                                persist_read_bool(PersistKeyWeatherEnabled);
   s_settings.weather_units = persist_exists(PersistKeyWeatherUnits) ?
@@ -292,6 +316,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyComplicationColor, (int)s_settings.complication_color);
   persist_write_int(PersistKeyHourColor, (int)s_settings.hour_color);
   persist_write_int(PersistKeyTimeMode, s_settings.time_mode);
+  persist_write_int(PersistKeyComplicationSize, s_settings.complication_size);
   persist_write_bool(PersistKeyWeatherEnabled, s_settings.weather_enabled);
   persist_write_int(PersistKeyWeatherUnits, s_settings.weather_units);
   persist_write_int(PersistKeyWeatherTemp, s_settings.weather_temp);
@@ -319,6 +344,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *complication = dict_find(iter, ConfigKeyComplicationColor);
   Tuple *hour = dict_find(iter, ConfigKeyHourColor);
   Tuple *time_mode = dict_find(iter, ConfigKeyTimeMode);
+  Tuple *complication_size = dict_find(iter, ConfigKeyComplicationSize);
   Tuple *weather_enabled = dict_find(iter, ConfigKeyWeatherEnabled);
   Tuple *weather_units = dict_find(iter, ConfigKeyWeatherUnits);
   Tuple *weather_temp = dict_find(iter, ConfigKeyWeatherTemp);
@@ -340,6 +366,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     int mode = (int)time_mode->value->int32;
     if (mode >= TimeModeWatch && mode <= TimeMode24Hour) {
       s_settings.time_mode = mode;
+    }
+  }
+  if (complication_size) {
+    int size = (int)complication_size->value->int32;
+    if (size >= ComplicationSizeNormal && size <= ComplicationSizeLarge) {
+      s_settings.complication_size = size;
     }
   }
   if (weather_enabled) {

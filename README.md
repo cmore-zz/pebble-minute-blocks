@@ -47,6 +47,7 @@ The Pebble app settings page supports:
 - complication color
 - center digit color
 - time mode: watch setting, 12-hour, or 24-hour
+- complication size: normal, medium, or large
 - weather on/off
 - weather units: Fahrenheit or Celsius
 

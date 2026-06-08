@@ -1,0 +1,47 @@
+{
+  "name": "pebble-box-minutes",
+  "author": "cmore",
+  "version": "0.1.0",
+  "keywords": [
+    "pebble-watchface"
+  ],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Box Minutes",
+    "uuid": "4e10c644-2684-4604-aaf3-be90703b8d95",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable",
+      "location"
+    ],
+    "messageKeys": [
+      "BackgroundColor",
+      "RingColor",
+      "ComplicationColor",
+      "HourColor",
+      "TimeMode",
+      "WeatherEnabled",
+      "WeatherUnits",
+      "WeatherTemp",
+      "WeatherAvailable",
+      "WeatherRequest"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

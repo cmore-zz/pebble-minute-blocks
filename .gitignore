@@ -1,0 +1,8 @@
+build/
+.lock-waf_*
+*.pbw
+*.pbl
+*.elf
+*.o
+*.pyc
+__pycache__/

@@ -28,6 +28,7 @@
 #define SETTINGS_DEFAULT_RING 0xFFFFFF
 #define SETTINGS_DEFAULT_COMPLICATION 0xFFFFFF
 #define SETTINGS_DEFAULT_HOUR 0xFFFFFF
+#define USE_VISITOR_COMPLICATION_FONT 1
 
 enum {
   TimeModeWatch = 0,
@@ -93,10 +94,13 @@ static struct tm s_time;
 static BatteryChargeState s_battery_state;
 static bool s_bluetooth_connected;
 static Settings s_settings;
+static GFont s_visitor_font_15;
+static GFont s_visitor_font_20;
+static GFont s_visitor_font_25;
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
   {0x7, 0x5, 0x5, 0x5, 0x7},
-  {0x2, 0x6, 0x2, 0x2, 0x7},
+  {0x2, 0x2, 0x2, 0x2, 0x2},
   {0x7, 0x1, 0x7, 0x4, 0x7},
   {0x7, 0x1, 0x7, 0x1, 0x7},
   {0x5, 0x5, 0x7, 0x1, 0x1},
@@ -199,6 +203,16 @@ static void draw_pixel_hour(GContext *ctx, GRect bounds) {
 }
 
 static GFont complication_label_font(void) {
+#if USE_VISITOR_COMPLICATION_FONT
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return s_visitor_font_25;
+    case ComplicationSizeMedium:
+      return s_visitor_font_15;
+    default:
+      return s_visitor_font_20;
+  }
+#else
   switch (s_settings.complication_size) {
     case ComplicationSizeLarge:
       return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
@@ -207,10 +221,15 @@ static GFont complication_label_font(void) {
     default:
       return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   }
+#endif
 }
 
 static GFont complication_number_font(void) {
+#if USE_VISITOR_COMPLICATION_FONT
+  return complication_label_font();
+#else
   return fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS);
+#endif
 }
 
 static int16_t complication_row_height(void) {
@@ -268,8 +287,12 @@ static void draw_aligned_label_number_suffix(GContext *ctx, const char *label, c
   int16_t suffix_gap = number_size.w > 0 && suffix_size.w > 0 ? 1 : 0;
   int16_t total_width = label_size.w + label_gap + number_size.w + suffix_gap + suffix_size.w;
   int16_t x = alignment == GTextAlignmentRight ? rect.origin.x + rect.size.w - total_width : rect.origin.x;
+#if USE_VISITOR_COMPLICATION_FONT
+  int16_t label_offset = 0;
+#else
   int16_t label_offset = s_settings.complication_size == ComplicationSizeLarge ? -1 :
                          s_settings.complication_size == ComplicationSizeMedium ? 1 : -1;
+#endif
   int16_t label_y = rect.origin.y + (rect.size.h - label_size.h) / 2 + label_offset;
   int16_t number_y = rect.origin.y + (rect.size.h - number_size.h) / 2;
   int16_t suffix_y = rect.origin.y + (rect.size.h - suffix_size.h) / 2 + label_offset;
@@ -533,8 +556,21 @@ static void window_unload(Window *window) {
   layer_destroy(s_canvas_layer);
 }
 
+static void fonts_load(void) {
+  s_visitor_font_15 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_VISITOR_15));
+  s_visitor_font_20 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_VISITOR_20));
+  s_visitor_font_25 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_VISITOR_25));
+}
+
+static void fonts_unload(void) {
+  fonts_unload_custom_font(s_visitor_font_15);
+  fonts_unload_custom_font(s_visitor_font_20);
+  fonts_unload_custom_font(s_visitor_font_25);
+}
+
 static void init(void) {
   settings_load();
+  fonts_load();
   refresh_time();
   s_battery_state = battery_state_service_peek();
   s_bluetooth_connected = bluetooth_connection_service_peek();
@@ -562,6 +598,7 @@ static void deinit(void) {
   bluetooth_connection_service_unsubscribe();
   app_message_deregister_callbacks();
   window_destroy(s_window);
+  fonts_unload();
 }
 
 int main(void) {

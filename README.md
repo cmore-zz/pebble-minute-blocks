@@ -12,7 +12,22 @@ complications around the main hour.
 The face has separate sizing for compact Pebble Time-era screens and the larger
 Pebble Time 2 / `emery` screen.
 
+The complication text uses the Visitor bitmap font by Ænigma, distributed via
+DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
+status labels and numbers stay crisp on low-resolution Pebble screens.
+
 ## Build
+
+The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`
+clears host compiler overrides such as `CC=/opt/homebrew/bin/gcc-15` before
+building:
+
+```sh
+just build
+```
+
+You can still call the Pebble SDK directly if your shell does not override the
+C compiler:
 
 ```sh
 pebble build

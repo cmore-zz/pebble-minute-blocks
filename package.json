@@ -42,7 +42,26 @@
       "WeatherRequest"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_VISITOR_15",
+          "file": "fonts/visitor1.ttf",
+          "characterRegex": "[A-Za-z0-9% -]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_VISITOR_20",
+          "file": "fonts/visitor1.ttf",
+          "characterRegex": "[A-Za-z0-9% -]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_VISITOR_25",
+          "file": "fonts/visitor1.ttf",
+          "characterRegex": "[A-Za-z0-9% -]"
+        }
+      ]
     }
   }
 }

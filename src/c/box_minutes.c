@@ -121,7 +121,7 @@ static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker
   int minute = s_time.tm_min;
   int completed_markers = minute / 5;
   int active_progress = minute % 5;
-  int32_t angle = DEG_TO_TRIGANGLE(marker_index * 30);
+  int32_t angle = DEG_TO_TRIGANGLE((marker_index + 1) * 30);
   GPoint marker_center = point_on_circle(center, radius, angle);
 
   if (marker_index < completed_markers) {

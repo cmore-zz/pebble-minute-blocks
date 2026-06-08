@@ -63,7 +63,7 @@ The Pebble app settings page supports:
 - center digit color
 - time mode: watch setting, 12-hour, or 24-hour
 - complication size: normal, medium, or large
-- complication visibility: always shown, or hidden until a tap/shake
+- complication visibility: always shown, or hidden until a tap/shake/backlight
 - each corner complication: none, date, current temperature, forecast range,
   battery, Bluetooth, or steps
 - weather on/off
@@ -72,6 +72,12 @@ The Pebble app settings page supports:
 Weather uses PebbleKit JS on the phone with location permission and Open-Meteo.
 It refreshes current temperature and the day's forecast range on startup and
 every 30 minutes.
+
+## Store Assets
+
+Store listing copy, screenshots, and listing icons live in `store-assets/`.
+Those files are intended for appstore/developer portal forms; the PBW itself
+only embeds the small `resources/images/menu_icon.png` menu icon.
 
 ## Minute Ring
 

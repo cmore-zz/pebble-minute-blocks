@@ -26,6 +26,7 @@
     },
     "capabilities": [
       "configurable",
+      "health",
       "location"
     ],
     "messageKeys": [
@@ -50,6 +51,12 @@
     ],
     "resources": {
       "media": [
+        {
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png",
+          "menuIcon": true
+        },
         {
           "type": "font",
           "name": "FONT_VISITOR_15",

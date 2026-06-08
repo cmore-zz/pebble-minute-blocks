@@ -7,9 +7,24 @@ var DEFAULT_SETTINGS = {
   HourColor: 0xFFFFFF,
   TimeMode: 0,
   ComplicationSize: 0,
+  ComplicationVisibility: 0,
+  ComplicationTopLeft: 1,
+  ComplicationTopRight: 2,
+  ComplicationBottomRight: 4,
+  ComplicationBottomLeft: 5,
   WeatherEnabled: 1,
   WeatherUnits: 0
 };
+
+var COMPLICATION_OPTIONS = [
+  { value: 0, label: "None" },
+  { value: 1, label: "Date" },
+  { value: 2, label: "Current temp" },
+  { value: 3, label: "Forecast range" },
+  { value: 4, label: "Battery" },
+  { value: 5, label: "Bluetooth" },
+  { value: 6, label: "Steps" }
+];
 
 function cloneDefaults() {
   return {
@@ -19,6 +34,11 @@ function cloneDefaults() {
     HourColor: DEFAULT_SETTINGS.HourColor,
     TimeMode: DEFAULT_SETTINGS.TimeMode,
     ComplicationSize: DEFAULT_SETTINGS.ComplicationSize,
+    ComplicationVisibility: DEFAULT_SETTINGS.ComplicationVisibility,
+    ComplicationTopLeft: DEFAULT_SETTINGS.ComplicationTopLeft,
+    ComplicationTopRight: DEFAULT_SETTINGS.ComplicationTopRight,
+    ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
+    ComplicationBottomLeft: DEFAULT_SETTINGS.ComplicationBottomLeft,
     WeatherEnabled: DEFAULT_SETTINGS.WeatherEnabled,
     WeatherUnits: DEFAULT_SETTINGS.WeatherUnits
   };
@@ -85,6 +105,8 @@ function getWeather(settings) {
       "?latitude=" + encodeURIComponent(pos.coords.latitude) +
       "&longitude=" + encodeURIComponent(pos.coords.longitude) +
       "&current=temperature_2m" +
+      "&daily=temperature_2m_max,temperature_2m_min" +
+      "&timezone=auto" +
       "&temperature_unit=" + unit;
     var req = new XMLHttpRequest();
 
@@ -92,8 +114,12 @@ function getWeather(settings) {
       try {
         var data = JSON.parse(req.responseText);
         var temp = Math.round(data.current.temperature_2m);
+        var high = Math.round(data.daily.temperature_2m_max[0]);
+        var low = Math.round(data.daily.temperature_2m_min[0]);
         Pebble.sendAppMessage({
           WeatherTemp: temp,
+          WeatherHigh: high,
+          WeatherLow: low,
           WeatherAvailable: 1
         });
       } catch (e) {
@@ -128,6 +154,19 @@ function field(label, id, value) {
   ].join("");
 }
 
+function selectField(label, id, value, options) {
+  return [
+    "<label for=\"" + id + "\">" + label + "</label>",
+    "<select id=\"" + id + "\">",
+    options.map(function(option) {
+      return "<option value=\"" + option.value + "\"" +
+        (Number(value) === option.value ? " selected" : "") + ">" +
+        option.label + "</option>";
+    }).join(""),
+    "</select>"
+  ].join("");
+}
+
 function buildConfigHtml(settings) {
   return [
     "<!doctype html>",
@@ -152,18 +191,24 @@ function buildConfigHtml(settings) {
     field("Ring", "ring", settings.RingColor),
     field("Complications", "complication", settings.ComplicationColor),
     field("Center digits", "hour", settings.HourColor),
-    "<label for=\"timeMode\">Time digits</label>",
-    "<select id=\"timeMode\">",
-    "<option value=\"0\"" + (settings.TimeMode === 0 ? " selected" : "") + ">Watch setting</option>",
-    "<option value=\"1\"" + (settings.TimeMode === 1 ? " selected" : "") + ">12 hour</option>",
-    "<option value=\"2\"" + (settings.TimeMode === 2 ? " selected" : "") + ">24 hour</option>",
-    "</select>",
-    "<label for=\"complicationSize\">Complication size</label>",
-    "<select id=\"complicationSize\">",
-    "<option value=\"0\"" + (settings.ComplicationSize === 0 ? " selected" : "") + ">Normal</option>",
-    "<option value=\"1\"" + (settings.ComplicationSize === 1 ? " selected" : "") + ">Medium</option>",
-    "<option value=\"2\"" + (settings.ComplicationSize === 2 ? " selected" : "") + ">Large</option>",
-    "</select>",
+    selectField("Time digits", "timeMode", settings.TimeMode, [
+      { value: 0, label: "Watch setting" },
+      { value: 1, label: "12 hour" },
+      { value: 2, label: "24 hour" }
+    ]),
+    selectField("Complication size", "complicationSize", settings.ComplicationSize, [
+      { value: 0, label: "Normal" },
+      { value: 1, label: "Medium" },
+      { value: 2, label: "Large" }
+    ]),
+    selectField("Complication visibility", "complicationVisibility", settings.ComplicationVisibility, [
+      { value: 0, label: "Always shown" },
+      { value: 1, label: "Tap to show" }
+    ]),
+    selectField("Top left", "complicationTopLeft", settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
+    selectField("Top right", "complicationTopRight", settings.ComplicationTopRight, COMPLICATION_OPTIONS),
+    selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight, COMPLICATION_OPTIONS),
+    selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft, COMPLICATION_OPTIONS),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -186,6 +231,11 @@ function buildConfigHtml(settings) {
     "HourColor:parseInt(document.getElementById('hour').value.slice(1),16),",
     "TimeMode:parseInt(document.getElementById('timeMode').value,10),",
     "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
+    "ComplicationVisibility:parseInt(document.getElementById('complicationVisibility').value,10),",
+    "ComplicationTopLeft:parseInt(document.getElementById('complicationTopLeft').value,10),",
+    "ComplicationTopRight:parseInt(document.getElementById('complicationTopRight').value,10),",
+    "ComplicationBottomRight:parseInt(document.getElementById('complicationBottomRight').value,10),",
+    "ComplicationBottomLeft:parseInt(document.getElementById('complicationBottomLeft').value,10),",
     "WeatherEnabled:document.getElementById('weatherEnabled').checked?1:0,",
     "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10)",
     "};",
@@ -220,6 +270,11 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.HourColor = numberFromHex(hexFromNumber(settings.HourColor));
     settings.TimeMode = Number(settings.TimeMode);
     settings.ComplicationSize = Number(settings.ComplicationSize);
+    settings.ComplicationVisibility = Number(settings.ComplicationVisibility);
+    settings.ComplicationTopLeft = Number(settings.ComplicationTopLeft);
+    settings.ComplicationTopRight = Number(settings.ComplicationTopRight);
+    settings.ComplicationBottomRight = Number(settings.ComplicationBottomRight);
+    settings.ComplicationBottomLeft = Number(settings.ComplicationBottomLeft);
     settings.WeatherEnabled = settings.WeatherEnabled ? 1 : 0;
     settings.WeatherUnits = Number(settings.WeatherUnits);
     saveSettings(settings);

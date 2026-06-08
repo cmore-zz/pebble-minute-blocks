@@ -39,7 +39,14 @@
       "WeatherUnits",
       "WeatherTemp",
       "WeatherAvailable",
-      "WeatherRequest"
+      "WeatherRequest",
+      "WeatherHigh",
+      "WeatherLow",
+      "ComplicationVisibility",
+      "ComplicationTopLeft",
+      "ComplicationTopRight",
+      "ComplicationBottomRight",
+      "ComplicationBottomLeft"
     ],
     "resources": {
       "media": [

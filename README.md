@@ -63,11 +63,15 @@ The Pebble app settings page supports:
 - center digit color
 - time mode: watch setting, 12-hour, or 24-hour
 - complication size: normal, medium, or large
+- complication visibility: always shown, or hidden until a tap/shake
+- each corner complication: none, date, current temperature, forecast range,
+  battery, Bluetooth, or steps
 - weather on/off
 - weather units: Fahrenheit or Celsius
 
 Weather uses PebbleKit JS on the phone with location permission and Open-Meteo.
-It refreshes on startup and every 30 minutes.
+It refreshes current temperature and the day's forecast range on startup and
+every 30 minutes.
 
 ## Minute Ring
 

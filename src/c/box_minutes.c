@@ -198,53 +198,149 @@ static void draw_pixel_hour(GContext *ctx, GRect bounds) {
   draw_pixel_digit(ctx, ones, GPoint(x, y), pixel, gap);
 }
 
-static void draw_center_complications(GContext *ctx, GRect bounds) {
-  char date_text[16];
-  char battery_text[8];
-  char bluetooth_text[4];
-  char weather_text[8];
-  bool medium = s_settings.complication_size == ComplicationSizeMedium;
-  bool large = s_settings.complication_size == ComplicationSizeLarge;
-  GFont font = fonts_get_system_font(large ? FONT_KEY_GOTHIC_24_BOLD :
-                                     medium ? FONT_KEY_GOTHIC_18_BOLD :
-                                     FONT_KEY_GOTHIC_14_BOLD);
-  int16_t row_height = large ? 28 : medium ? 22 : 18;
-  int16_t bottom_y = bounds.size.h - (large ? 30 : medium ? 24 : 20);
-  int16_t date_width = large ? 86 : medium ? 72 : 58;
-  int16_t weather_width = large ? 66 : medium ? 58 : 44;
-  int16_t battery_width = large ? 66 : medium ? 52 : 41;
-  int16_t bluetooth_width = large ? 48 : medium ? 38 : 34;
-
-  strftime(date_text, sizeof(date_text), "%a %d", &s_time);
-  snprintf(battery_text, sizeof(battery_text), "%d%%", s_battery_state.charge_percent);
-  snprintf(bluetooth_text, sizeof(bluetooth_text), "%s", s_bluetooth_connected ? "BT" : "--");
-  snprintf(weather_text, sizeof(weather_text), "%s",
-           s_settings.weather_available ?
-           (s_settings.weather_units == WeatherUnitsC ? "0C" : "0F") : "--");
-
-  if (s_settings.weather_available) {
-    snprintf(weather_text, sizeof(weather_text), "%d%s", s_settings.weather_temp,
-             s_settings.weather_units == WeatherUnitsC ? "C" : "F");
+static GFont complication_label_font(void) {
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+    case ComplicationSizeMedium:
+      return fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+    default:
+      return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   }
+}
+
+static GFont complication_number_font(void) {
+  return fonts_get_system_font(FONT_KEY_LECO_20_BOLD_NUMBERS);
+}
+
+static int16_t complication_row_height(void) {
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return 28;
+    case ComplicationSizeMedium:
+      return 22;
+    default:
+      return 26;
+  }
+}
+
+static int16_t complication_text_width(int16_t normal, int16_t medium, int16_t large) {
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return large;
+    case ComplicationSizeMedium:
+      return medium;
+    default:
+      return normal;
+  }
+}
+
+static GRect corner_rect(GRect bounds, bool right, bool bottom, int16_t width, int16_t height) {
+  int16_t x = right ? bounds.size.w - width - 4 : 4;
+  int16_t y = bottom ? bounds.size.h - height - 2 : 0;
+  return GRect(x, y, width, height);
+}
+
+static void draw_aligned_text(GContext *ctx, const char *text, GRect rect, GTextAlignment alignment) {
+  graphics_draw_text(ctx, text, complication_label_font(), rect,
+                     GTextOverflowModeTrailingEllipsis, alignment, NULL);
+}
+
+static GSize text_size(const char *text, GFont font, GRect rect) {
+  if (!text || text[0] == '\0') {
+    return GSize(0, 0);
+  }
+
+  return graphics_text_layout_get_content_size(text, font, rect,
+                                               GTextOverflowModeTrailingEllipsis,
+                                               GTextAlignmentLeft);
+}
+
+static void draw_aligned_label_number_suffix(GContext *ctx, const char *label, const char *number,
+                                             const char *suffix, GRect rect,
+                                             GTextAlignment alignment) {
+  GFont label_font = complication_label_font();
+  GFont number_font = complication_number_font();
+  GSize label_size = text_size(label, label_font, rect);
+  GSize number_size = text_size(number, number_font, rect);
+  GSize suffix_size = text_size(suffix, label_font, rect);
+  int16_t label_gap = label_size.w > 0 && number_size.w > 0 ? 3 : 0;
+  int16_t suffix_gap = number_size.w > 0 && suffix_size.w > 0 ? 1 : 0;
+  int16_t total_width = label_size.w + label_gap + number_size.w + suffix_gap + suffix_size.w;
+  int16_t x = alignment == GTextAlignmentRight ? rect.origin.x + rect.size.w - total_width : rect.origin.x;
+  int16_t label_offset = s_settings.complication_size == ComplicationSizeLarge ? -1 :
+                         s_settings.complication_size == ComplicationSizeMedium ? 1 : -1;
+  int16_t label_y = rect.origin.y + (rect.size.h - label_size.h) / 2 + label_offset;
+  int16_t number_y = rect.origin.y + (rect.size.h - number_size.h) / 2;
+  int16_t suffix_y = rect.origin.y + (rect.size.h - suffix_size.h) / 2 + label_offset;
+
+  if (label_size.w > 0) {
+    graphics_draw_text(ctx, label, label_font, GRect(x, label_y, label_size.w, label_size.h),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+    x += label_size.w + label_gap;
+  }
+  if (number_size.w > 0) {
+    graphics_draw_text(ctx, number, number_font, GRect(x, number_y, number_size.w, number_size.h),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+    x += number_size.w + suffix_gap;
+  }
+  if (suffix_size.w > 0) {
+    graphics_draw_text(ctx, suffix, label_font, GRect(x, suffix_y, suffix_size.w, suffix_size.h),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  }
+}
+
+static void draw_aligned_number_with_suffix(GContext *ctx, const char *number, const char *suffix,
+                                            GRect rect, GTextAlignment alignment) {
+  if (!number || number[0] == '\0') {
+    draw_aligned_text(ctx, suffix, rect, alignment);
+    return;
+  }
+
+  draw_aligned_label_number_suffix(ctx, "", number, suffix, rect, alignment);
+}
+
+static void draw_center_complications(GContext *ctx, GRect bounds) {
+  char date_label[8];
+  char date_number[4];
+  char battery_number[4];
+  char bluetooth_text[4];
+  char weather_number[8];
+  const char *weather_suffix = s_settings.weather_units == WeatherUnitsC ? "C" : "F";
+  int16_t row_height = complication_row_height();
+  int16_t date_width = complication_text_width(82, 72, 86);
+  int16_t weather_width = complication_text_width(62, 58, 66);
+  int16_t battery_width = complication_text_width(62, 52, 66);
+  int16_t bluetooth_width = complication_text_width(44, 38, 48);
+
+  strftime(date_label, sizeof(date_label), "%a", &s_time);
+  snprintf(date_number, sizeof(date_number), "%02d", s_time.tm_mday);
+  snprintf(battery_number, sizeof(battery_number), "%d", s_battery_state.charge_percent);
+  snprintf(bluetooth_text, sizeof(bluetooth_text), "%s", s_bluetooth_connected ? "BT" : "--");
+  snprintf(weather_number, sizeof(weather_number), "%d", s_settings.weather_available ? s_settings.weather_temp : 0);
 
   graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
-  graphics_draw_text(ctx, date_text, font,
-                     GRect(4, 0, date_width, row_height),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  draw_aligned_label_number_suffix(ctx, date_label, date_number, "",
+                                  corner_rect(bounds, false, false, date_width, row_height),
+                                  GTextAlignmentLeft);
 
   if (s_settings.weather_enabled) {
-    graphics_draw_text(ctx, weather_text, font,
-                       GRect(bounds.size.w - weather_width - 4, 0, weather_width, row_height),
-                       GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+    if (s_settings.weather_available) {
+      draw_aligned_number_with_suffix(ctx, weather_number, weather_suffix,
+                                      corner_rect(bounds, true, false, weather_width, row_height),
+                                      GTextAlignmentRight);
+    } else {
+      draw_aligned_text(ctx, "--", corner_rect(bounds, true, false, weather_width, row_height),
+                        GTextAlignmentRight);
+    }
   }
 
-  graphics_draw_text(ctx, battery_text, font,
-                     GRect(bounds.size.w - battery_width - 4, bottom_y, battery_width, row_height),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+  draw_aligned_number_with_suffix(ctx, battery_number, "%",
+                                  corner_rect(bounds, true, true, battery_width, row_height),
+                                  GTextAlignmentRight);
 
-  graphics_draw_text(ctx, bluetooth_text, font,
-                     GRect(4, bottom_y, bluetooth_width, row_height),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  draw_aligned_text(ctx, bluetooth_text, corner_rect(bounds, false, true, bluetooth_width, row_height),
+                    GTextAlignmentLeft);
 }
 
 static void canvas_update_proc(Layer *layer, GContext *ctx) {

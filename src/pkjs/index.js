@@ -4,7 +4,7 @@ var DEFAULT_SETTINGS = {
   BackgroundColor: 0x000000,
   RingColor: 0xFFFFFF,
   ComplicationColor: 0xFFFFFF,
-  HourColor: 0xFFFFFF,
+  HourColor: 0x00FFFF,
   TimeMode: 0,
   ComplicationSize: 0,
   ComplicationVisibility: 0,
@@ -15,6 +15,58 @@ var DEFAULT_SETTINGS = {
   WeatherEnabled: 1,
   WeatherUnits: 0
 };
+
+var COLOR_PRESETS = [
+  {
+    name: "Default",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0x00FFFF
+  },
+  {
+    name: "Mono",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0xFFFFFF
+  },
+  {
+    name: "Inverted",
+    BackgroundColor: 0xFFFFFF,
+    RingColor: 0x000000,
+    ComplicationColor: 0x000000,
+    HourColor: 0x000000
+  },
+  {
+    name: "Amber",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0xFFAA00
+  },
+  {
+    name: "Green",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0x00FF00
+  },
+  {
+    name: "Red",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0xFF0000
+  },
+  {
+    name: "Blue",
+    BackgroundColor: 0x000000,
+    RingColor: 0xFFFFFF,
+    ComplicationColor: 0xFFFFFF,
+    HourColor: 0x0055FF
+  }
+];
 
 var COMPLICATION_OPTIONS = [
   { value: 0, label: "None" },
@@ -167,6 +219,27 @@ function selectField(label, id, value, options) {
   ].join("");
 }
 
+function presetButtons() {
+  return [
+    "<label>Color preset</label>",
+    "<div class=\"preset-grid\">",
+    COLOR_PRESETS.map(function(preset, index) {
+      return [
+        "<button class=\"preset\" type=\"button\" data-preset=\"" + index + "\">",
+        "<span class=\"swatches\">",
+        "<span style=\"background:" + hexFromNumber(preset.BackgroundColor) + "\"></span>",
+        "<span style=\"background:" + hexFromNumber(preset.RingColor) + "\"></span>",
+        "<span style=\"background:" + hexFromNumber(preset.ComplicationColor) + "\"></span>",
+        "<span style=\"background:" + hexFromNumber(preset.HourColor) + "\"></span>",
+        "</span>",
+        "<span>" + preset.name + "</span>",
+        "</button>"
+      ].join("");
+    }).join(""),
+    "</div>"
+  ].join("");
+}
+
 function buildConfigHtml(settings) {
   return [
     "<!doctype html>",
@@ -179,6 +252,10 @@ function buildConfigHtml(settings) {
     "label{display:block;font-weight:700;margin:14px 0 8px;}",
     "input,select,button{box-sizing:border-box;font-size:18px;}",
     "select{height:44px;background:#222;color:#eee;border:1px solid #555;padding:0 10px;}",
+    ".preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;}",
+    ".preset{height:46px;background:#222;color:#eee;border:1px solid #555;text-align:left;padding:6px 8px;}",
+    ".swatches{display:inline-flex;vertical-align:middle;margin-right:8px;border:1px solid #666;}",
+    ".swatches span{display:block;width:10px;height:16px;}",
     ".color-row{position:relative;width:44px;height:44px;}",
     ".color-preview{display:block;width:40px;height:40px;border:2px solid #777;border-radius:0;}",
     "input[type=color]{position:absolute;inset:0;width:44px;height:44px;opacity:0;}",
@@ -187,6 +264,7 @@ function buildConfigHtml(settings) {
     "</head>",
     "<body>",
     "<h1>Minute Blocks</h1>",
+    presetButtons(),
     field("Background", "background", settings.BackgroundColor),
     field("Ring", "ring", settings.RingColor),
     field("Complications", "complication", settings.ComplicationColor),
@@ -217,11 +295,28 @@ function buildConfigHtml(settings) {
     "</select>",
     "<button id=\"save\">Save</button>",
     "<script>",
+    "var presets=" + JSON.stringify(COLOR_PRESETS) + ";",
+    "function setColor(id,value){",
+    "var input=document.getElementById(id);",
+    "var preview=document.getElementById(id+'Preview');",
+    "var hex=('#'+('000000'+Number(value).toString(16)).slice(-6));",
+    "input.value=hex;",
+    "preview.style.background=hex;",
+    "}",
     "['background','ring','complication','hour'].forEach(function(id){",
     "var input=document.getElementById(id);",
     "var preview=document.getElementById(id+'Preview');",
     "input.oninput=function(){preview.style.background=input.value;};",
     "input.onchange=input.oninput;",
+    "});",
+    "[].forEach.call(document.querySelectorAll('.preset'),function(button){",
+    "button.onclick=function(){",
+    "var preset=presets[parseInt(button.getAttribute('data-preset'),10)];",
+    "setColor('background',preset.BackgroundColor);",
+    "setColor('ring',preset.RingColor);",
+    "setColor('complication',preset.ComplicationColor);",
+    "setColor('hour',preset.HourColor);",
+    "};",
     "});",
     "document.getElementById('save').onclick=function(){",
     "var settings={",

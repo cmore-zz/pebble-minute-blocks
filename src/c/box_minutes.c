@@ -27,7 +27,7 @@
 #define SETTINGS_DEFAULT_BACKGROUND 0x000000
 #define SETTINGS_DEFAULT_RING 0xFFFFFF
 #define SETTINGS_DEFAULT_COMPLICATION 0xFFFFFF
-#define SETTINGS_DEFAULT_HOUR 0xFFFFFF
+#define SETTINGS_DEFAULT_HOUR 0x00FFFF
 #define USE_VISITOR_COMPLICATION_FONT 1
 #define COMPLICATION_SLOT_COUNT 4
 #define COMPLICATION_REVEAL_MS 7000
@@ -390,6 +390,64 @@ static void draw_aligned_number_with_suffix(GContext *ctx, const char *number, c
   draw_aligned_label_number_suffix(ctx, "", number, suffix, rect, alignment);
 }
 
+static int16_t steps_icon_width(void) {
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return 15;
+    case ComplicationSizeMedium:
+      return 10;
+    default:
+      return 13;
+  }
+}
+
+static int16_t steps_icon_height(void) {
+  switch (s_settings.complication_size) {
+    case ComplicationSizeLarge:
+      return 18;
+    case ComplicationSizeMedium:
+      return 14;
+    default:
+      return 16;
+  }
+}
+
+static void draw_step_footprint(GContext *ctx, GPoint origin, int16_t scale) {
+  graphics_fill_rect(ctx, GRect(origin.x + scale, origin.y, scale * 2, scale * 3), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(origin.x, origin.y + scale * 2, scale * 4, scale * 2), 0, GCornerNone);
+}
+
+static void draw_steps_icon(GContext *ctx, GRect rect) {
+  int16_t scale = s_settings.complication_size == ComplicationSizeMedium ? 1 : 2;
+  int16_t y = rect.origin.y + (rect.size.h - steps_icon_height()) / 2;
+  if (s_settings.complication_size == ComplicationSizeMedium) {
+    draw_step_footprint(ctx, GPoint(rect.origin.x + 1, y + 7), scale);
+    draw_step_footprint(ctx, GPoint(rect.origin.x + 5, y + 2), scale);
+  } else {
+    draw_step_footprint(ctx, GPoint(rect.origin.x + 1, y + 9), scale);
+    draw_step_footprint(ctx, GPoint(rect.origin.x + 7, y + 1), scale);
+  }
+}
+
+static void draw_aligned_steps(GContext *ctx, const char *number, GRect rect,
+                               GTextAlignment alignment) {
+  GFont number_font = complication_number_font();
+  GSize number_size = text_size(number, number_font, rect);
+  int16_t icon_width = steps_icon_width();
+  int16_t gap = number_size.w > 0 ? 3 : 0;
+  int16_t total_width = icon_width + gap + number_size.w;
+  int16_t x = alignment == GTextAlignmentRight ? rect.origin.x + rect.size.w - total_width : rect.origin.x;
+  int16_t number_y = rect.origin.y + (rect.size.h - number_size.h) / 2;
+
+  draw_steps_icon(ctx, GRect(x, rect.origin.y, icon_width, rect.size.h));
+  x += icon_width + gap;
+
+  if (number_size.w > 0) {
+    graphics_draw_text(ctx, number, number_font, GRect(x, number_y, number_size.w, number_size.h),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  }
+}
+
 static void draw_stacked_text(GContext *ctx, const char *top, const char *bottom,
                               GRect rect, GTextAlignment alignment) {
   GFont font = complication_label_font();
@@ -518,7 +576,7 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type) {
       draw_aligned_text(ctx, bluetooth_text, rect, alignment);
       break;
     case ComplicationSteps:
-      draw_aligned_label_number_suffix(ctx, "STP", steps_text, "", rect, alignment);
+      draw_aligned_steps(ctx, steps_text, rect, alignment);
       break;
   }
 }

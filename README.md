@@ -61,6 +61,8 @@ The Pebble app settings page supports:
 - minute ring color
 - complication color
 - center digit color
+- color presets, including the default cyan center digits with white ring and
+  complications
 - time mode: watch setting, 12-hour, or 24-hour
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until a tap/shake/backlight

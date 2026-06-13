@@ -81,6 +81,22 @@ Store listing copy, screenshots, and listing icons live in `store-assets/`.
 Those files are intended for appstore/developer portal forms; the PBW itself
 only embeds the small `resources/images/menu_icon.png` menu icon.
 
+### Screenshots
+
+| Platform | Normal | Active complications | Event overlay |
+| --- | --- | --- | --- |
+| Pebble / Pebble 2 (`aplite`) | [Normal](store-assets/screenshots/aplite-normal.png) | [Active](store-assets/screenshots/aplite-active.png) | [Overlay](store-assets/screenshots/aplite-overlay.png) |
+| Pebble Time / Time Steel (`basalt`) | [Normal](store-assets/screenshots/basalt-normal.png) | [Active](store-assets/screenshots/basalt-active.png) | [Overlay](store-assets/screenshots/basalt-overlay.png) |
+| Pebble Time Round (`chalk`) | [Normal](store-assets/screenshots/chalk-normal.png) | [Active](store-assets/screenshots/chalk-active.png) | - |
+| Pebble 2 SE (`diorite`) | [Normal](store-assets/screenshots/diorite-normal.png) | [Active](store-assets/screenshots/diorite-active.png) | [Overlay](store-assets/screenshots/diorite-overlay.png) |
+| Pebble Time 2 (`emery`) | [Normal](store-assets/screenshots/emery-normal.png) | [Active](store-assets/screenshots/emery-active.png) | [Overlay](store-assets/screenshots/emery-overlay.png) |
+
+Regenerate the screenshot set with:
+
+```sh
+just screenshots
+```
+
 ## Minute Ring
 
 - Future five-minute blocks: four small dots.

@@ -11,3 +11,6 @@ clean:
 rebuild:
     unset CC CXX && pebble clean
     unset CC CXX && pebble build
+
+screenshots *args:
+    ./scripts/capture-store-screenshots.sh {{args}}

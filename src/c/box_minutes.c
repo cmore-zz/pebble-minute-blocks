@@ -8,18 +8,32 @@
 #if defined(PBL_PLATFORM_EMERY)
 #define FUTURE_MARKER_SIZE 4
 #define ACTIVE_MARKER_SIZE 9
-#define COMPLETE_MARKER_SIZE 18
+#define COMPLETE_MARKER_SIZE 16
 #define FUTURE_MARKER_OFFSET 4
 #define ACTIVE_MARKER_OFFSET 6
 #define HOUR_PIXEL_SIZE 11
+#define HOUR_COMPACT_PIXEL_SIZE 8
+#define HOUR_OVERLAY_PIXEL_SIZE 7
 #define HOUR_Y_OFFSET 0
-#else
+#elif defined(PBL_PLATFORM_CHALK)
 #define FUTURE_MARKER_SIZE 3
 #define ACTIVE_MARKER_SIZE 7
-#define COMPLETE_MARKER_SIZE 14
+#define COMPLETE_MARKER_SIZE 12
 #define FUTURE_MARKER_OFFSET 3
 #define ACTIVE_MARKER_OFFSET 5
-#define HOUR_PIXEL_SIZE PBL_IF_ROUND_ELSE(8, 9)
+#define HOUR_PIXEL_SIZE 8
+#define HOUR_COMPACT_PIXEL_SIZE 6
+#define HOUR_OVERLAY_PIXEL_SIZE 5
+#define HOUR_Y_OFFSET 0
+#else
+#define FUTURE_MARKER_SIZE 1
+#define ACTIVE_MARKER_SIZE 3
+#define COMPLETE_MARKER_SIZE 7
+#define FUTURE_MARKER_OFFSET 2
+#define ACTIVE_MARKER_OFFSET 3
+#define HOUR_PIXEL_SIZE 8
+#define HOUR_COMPACT_PIXEL_SIZE 7
+#define HOUR_OVERLAY_PIXEL_SIZE 6
 #define HOUR_Y_OFFSET 0
 #endif
 
@@ -66,6 +80,12 @@ enum {
   ComplicationSlotBottomRight = 2,
   ComplicationSlotBottomLeft = 3,
 };
+
+typedef enum {
+  HourModeNormal = 0,
+  HourModeCompact = 1,
+  HourModeOverlay = 2,
+} HourMode;
 
 enum {
   ConfigKeyBackgroundColor = 10000,
@@ -146,6 +166,7 @@ static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
 
+static void refresh_time(void);
 static void update_light_polling(void);
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
@@ -219,7 +240,7 @@ static void draw_pixel_digit(GContext *ctx, int digit, GPoint origin, int16_t pi
   }
 }
 
-static void draw_pixel_hour(GContext *ctx, GRect bounds) {
+static void draw_pixel_hour(GContext *ctx, GRect bounds, HourMode mode) {
   bool is_24h = s_settings.time_mode == TimeModeWatch ? clock_is_24h_style() :
                                                      s_settings.time_mode == TimeMode24Hour;
   int hour = s_time.tm_hour;
@@ -235,14 +256,17 @@ static void draw_pixel_hour(GContext *ctx, GRect bounds) {
   int ones = hour % 10;
   bool draw_tens = is_24h || tens > 0;
 
-  const int16_t pixel = HOUR_PIXEL_SIZE;
+  const int16_t pixel = mode == HourModeOverlay ? HOUR_OVERLAY_PIXEL_SIZE :
+                        mode == HourModeCompact ? HOUR_COMPACT_PIXEL_SIZE :
+                        HOUR_PIXEL_SIZE;
   const int16_t gap = 2;
   const int16_t digit_width = PIXEL_COLS * pixel + (PIXEL_COLS - 1) * gap;
   const int16_t digit_height = PIXEL_ROWS * pixel + (PIXEL_ROWS - 1) * gap;
   const int16_t digit_gap = pixel;
   const int16_t total_width = draw_tens ? digit_width * 2 + digit_gap : digit_width;
   int16_t x = bounds.origin.x + (bounds.size.w - total_width) / 2;
-  int16_t y = bounds.origin.y + (bounds.size.h - digit_height) / 2 + HOUR_Y_OFFSET;
+  int16_t y = bounds.origin.y + (bounds.size.h - digit_height) / 2 +
+              PBL_IF_ROUND_ELSE(mode == HourModeCompact ? -20 : HOUR_Y_OFFSET, HOUR_Y_OFFSET);
 
   if (draw_tens) {
     draw_pixel_digit(ctx, tens, GPoint(x, y), pixel, gap);
@@ -315,16 +339,21 @@ static int16_t complication_text_width(int16_t normal, int16_t medium, int16_t l
   }
 }
 
-static GRect corner_rect(GRect bounds, bool right, bool bottom, int16_t width, int16_t height) {
-  int16_t x = right ? bounds.size.w - width - 4 : 4;
-  int16_t y = bottom ? bounds.size.h - height - 2 : 0;
+static GRect corner_rect(GRect bounds, bool right, bool bottom, int16_t width, int16_t height,
+                         bool tight) {
+  int16_t horizontal_margin = tight ? 0 : 4;
+  int16_t bottom_margin = tight ? 0 : 2;
+  int16_t x = bounds.origin.x + (right ? bounds.size.w - width - horizontal_margin :
+                                          horizontal_margin);
+  int16_t y = bounds.origin.y + (bottom ? bounds.size.h - height - bottom_margin : 0);
   return GRect(x, y, width, height);
 }
 
-static GRect complication_slot_rect(GRect bounds, int slot, int16_t width, int16_t height) {
+static GRect complication_slot_rect(GRect bounds, int slot, int16_t width, int16_t height,
+                                    bool tight) {
   bool right = slot == ComplicationSlotTopRight || slot == ComplicationSlotBottomRight;
   bool bottom = slot == ComplicationSlotBottomRight || slot == ComplicationSlotBottomLeft;
-  return corner_rect(bounds, right, bottom, width, height);
+  return corner_rect(bounds, right, bottom, width, height, tight);
 }
 
 static void draw_aligned_text(GContext *ctx, const char *text, GRect rect, GTextAlignment alignment) {
@@ -498,6 +527,47 @@ static void format_steps(char *buffer, size_t size) {
   }
 }
 
+static bool format_complication_text(int type, char *buffer, size_t size) {
+  char date_label[8];
+  char steps_text[12];
+  const char *weather_suffix = s_settings.weather_units == WeatherUnitsC ? "C" : "F";
+
+  switch (type) {
+    case ComplicationDate:
+      strftime(date_label, sizeof(date_label), "%a", &s_time);
+      snprintf(buffer, size, "%s %02d", date_label, s_time.tm_mday);
+      return true;
+    case ComplicationWeather:
+      if (s_settings.weather_enabled && s_settings.weather_available) {
+        snprintf(buffer, size, "%d%s", s_settings.weather_temp, weather_suffix);
+      } else {
+        snprintf(buffer, size, "--");
+      }
+      return true;
+    case ComplicationForecast:
+      if (s_settings.weather_enabled && s_settings.weather_available) {
+        snprintf(buffer, size, "%d-%d%s", s_settings.weather_low, s_settings.weather_high,
+                 weather_suffix);
+      } else {
+        snprintf(buffer, size, "--");
+      }
+      return true;
+    case ComplicationBattery:
+      snprintf(buffer, size, "%d%%", s_battery_state.charge_percent);
+      return true;
+    case ComplicationBluetooth:
+      snprintf(buffer, size, "%s", s_bluetooth_connected ? "BT" : "--");
+      return true;
+    case ComplicationSteps:
+      format_steps(steps_text, sizeof(steps_text));
+      snprintf(buffer, size, "%s", steps_text);
+      return true;
+    default:
+      buffer[0] = '\0';
+      return false;
+  }
+}
+
 static int16_t complication_width(int type) {
   switch (type) {
     case ComplicationDate:
@@ -521,7 +591,11 @@ static bool complications_visible(void) {
   return s_settings.complication_visibility == ComplicationVisibilityAlways || s_complications_revealed;
 }
 
-static void draw_complication(GContext *ctx, GRect bounds, int slot, int type) {
+static bool round_complications_visible(void) {
+  return s_settings.complication_visibility == ComplicationVisibilityOnTap && s_complications_revealed;
+}
+
+static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, bool tight) {
   char date_label[8];
   char date_number[4];
   char battery_number[4];
@@ -533,7 +607,7 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type) {
   int16_t row_height = complication_row_height();
   int16_t box_height = type == ComplicationDate ? complication_box_height() : row_height;
   int16_t width = complication_width(type);
-  GRect rect = complication_slot_rect(bounds, slot, width, box_height);
+  GRect rect = complication_slot_rect(bounds, slot, width, box_height, tight);
   GTextAlignment alignment = (slot == ComplicationSlotTopRight ||
                               slot == ComplicationSlotBottomRight) ?
                              GTextAlignmentRight : GTextAlignmentLeft;
@@ -581,7 +655,11 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type) {
   }
 }
 
-static void draw_center_complications(GContext *ctx, GRect bounds) {
+static void draw_center_complications(GContext *ctx, GRect bounds, bool tight) {
+  if (PBL_IF_ROUND_ELSE(true, false)) {
+    return;
+  }
+
   if (!complications_visible()) {
     return;
   }
@@ -589,14 +667,65 @@ static void draw_center_complications(GContext *ctx, GRect bounds) {
   graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
 
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
-    draw_complication(ctx, bounds, slot, s_settings.complications[slot]);
+    draw_complication(ctx, bounds, slot, s_settings.complications[slot], tight);
+  }
+}
+
+static void draw_round_center_complications(GContext *ctx, GRect bounds) {
+  char labels[2][16];
+  int count = 0;
+  GFont font = s_visitor_font_15;
+
+  if (!PBL_IF_ROUND_ELSE(true, false)) {
+    return;
+  }
+
+  if (!round_complications_visible()) {
+    return;
+  }
+
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT && count < 2; slot++) {
+    if (format_complication_text(s_settings.complications[slot], labels[count],
+                                 sizeof(labels[count]))) {
+      count++;
+    }
+  }
+
+  if (count == 0) {
+    return;
+  }
+
+  GRect measure_rect = GRect(0, 0, 80, 20);
+  GSize first_size = text_size(labels[0], font, measure_rect);
+  int16_t first_x = bounds.origin.x + (bounds.size.w - first_size.w) / 2;
+  int16_t y = bounds.origin.y + bounds.size.h / 2 + (count > 1 ? 12 : 18);
+  int16_t height = 18;
+
+  graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
+  graphics_draw_text(ctx, labels[0], font, GRect(first_x, y, first_size.w, height),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+  if (count > 1) {
+    GSize second_size = text_size(labels[1], font, measure_rect);
+    int16_t second_x = bounds.origin.x + (bounds.size.w - second_size.w) / 2;
+    graphics_draw_text(ctx, labels[1], font, GRect(second_x, y + 14, second_size.w, height),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
   }
 }
 
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
+  refresh_time();
+
   GRect bounds = layer_get_bounds(layer);
-  GPoint center = grect_center_point(&bounds);
-  int16_t radius = (bounds.size.w < bounds.size.h ? bounds.size.w : bounds.size.h) / 2 - 12;
+  GRect content_bounds = layer_get_unobstructed_bounds(layer);
+  bool is_obstructed = !grect_equal(&bounds, &content_bounds);
+  bool round_active = PBL_IF_ROUND_ELSE(round_complications_visible(), false);
+  HourMode hour_mode = is_obstructed ? HourModeOverlay :
+                       round_active ? HourModeCompact :
+                       HourModeNormal;
+  GPoint center = grect_center_point(&content_bounds);
+  int16_t radius = (content_bounds.size.w < content_bounds.size.h ?
+                    content_bounds.size.w : content_bounds.size.h) / 2 - 12;
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
@@ -607,8 +736,9 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   }
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
-  draw_pixel_hour(ctx, bounds);
-  draw_center_complications(ctx, bounds);
+  draw_pixel_hour(ctx, content_bounds, hour_mode);
+  draw_round_center_complications(ctx, content_bounds);
+  draw_center_complications(ctx, content_bounds, is_obstructed);
 }
 
 static uint32_t persist_read_color(int key, uint32_t fallback) {
@@ -633,7 +763,7 @@ static void settings_set_defaults(void) {
     .weather_high = 0,
     .weather_low = 0,
     .weather_available = false,
-    .complication_visibility = ComplicationVisibilityAlways,
+    .complication_visibility = ComplicationVisibilityOnTap,
     .complications = {
       ComplicationDate,
       ComplicationWeather,
@@ -677,10 +807,10 @@ static void settings_load(void) {
                                  persist_read_bool(PersistKeyWeatherAvailable);
   s_settings.complication_visibility = persist_exists(PersistKeyComplicationVisibility) ?
                                        persist_read_int(PersistKeyComplicationVisibility) :
-                                       ComplicationVisibilityAlways;
+                                       ComplicationVisibilityOnTap;
   if (s_settings.complication_visibility < ComplicationVisibilityAlways ||
       s_settings.complication_visibility > ComplicationVisibilityOnTap) {
-    s_settings.complication_visibility = ComplicationVisibilityAlways;
+    s_settings.complication_visibility = ComplicationVisibilityOnTap;
   }
 
   int persist_keys[COMPLICATION_SLOT_COUNT] = {
@@ -867,6 +997,31 @@ static void bluetooth_handler(bool connected) {
   layer_mark_dirty(s_canvas_layer);
 }
 
+#ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
+static void mark_canvas_dirty(void) {
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+}
+
+static void unobstructed_will_change_handler(GRect final_unobstructed_screen_area, void *context) {
+  (void)final_unobstructed_screen_area;
+  (void)context;
+  mark_canvas_dirty();
+}
+
+static void unobstructed_change_handler(AnimationProgress progress, void *context) {
+  (void)progress;
+  (void)context;
+  mark_canvas_dirty();
+}
+
+static void unobstructed_did_change_handler(void *context) {
+  (void)context;
+  mark_canvas_dirty();
+}
+#endif
+
 static void complication_reveal_timer_handler(void *context) {
   s_complication_reveal_timer = NULL;
   s_complications_revealed = false;
@@ -982,6 +1137,13 @@ static void init(void) {
   battery_state_service_subscribe(battery_handler);
   bluetooth_connection_service_subscribe(bluetooth_handler);
   accel_tap_service_subscribe(accel_tap_handler);
+#ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
+  unobstructed_area_service_subscribe((UnobstructedAreaHandlers) {
+    .will_change = unobstructed_will_change_handler,
+    .change = unobstructed_change_handler,
+    .did_change = unobstructed_did_change_handler,
+  }, NULL);
+#endif
 #if defined(PBL_TOUCH)
   touch_service_subscribe(touch_handler, NULL);
 #endif
@@ -998,6 +1160,9 @@ static void deinit(void) {
   battery_state_service_unsubscribe();
   bluetooth_connection_service_unsubscribe();
   accel_tap_service_unsubscribe();
+#ifdef _PBL_API_EXISTS_unobstructed_area_service_unsubscribe
+  unobstructed_area_service_unsubscribe();
+#endif
 #if defined(PBL_TOUCH)
   touch_service_unsubscribe();
 #endif

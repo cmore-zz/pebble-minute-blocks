@@ -7,7 +7,7 @@ var DEFAULT_SETTINGS = {
   HourColor: 0x00FFFF,
   TimeMode: 0,
   ComplicationSize: 0,
-  ComplicationVisibility: 0,
+  ComplicationVisibility: 1,
   ComplicationTopLeft: 1,
   ComplicationTopRight: 2,
   ComplicationBottomRight: 4,
@@ -66,6 +66,11 @@ var COLOR_PRESETS = [
     ComplicationColor: 0xFFFFFF,
     HourColor: 0x0055FF
   }
+];
+
+var BW_COLOR_PRESETS = [
+  COLOR_PRESETS[0],
+  COLOR_PRESETS[2]
 ];
 
 var COMPLICATION_OPTIONS = [
@@ -219,11 +224,11 @@ function selectField(label, id, value, options) {
   ].join("");
 }
 
-function presetButtons() {
+function presetButtons(presets, label) {
   return [
-    "<label>Color preset</label>",
+    "<label>" + label + "</label>",
     "<div class=\"preset-grid\">",
-    COLOR_PRESETS.map(function(preset, index) {
+    presets.map(function(preset, index) {
       return [
         "<button class=\"preset\" type=\"button\" data-preset=\"" + index + "\">",
         "<span class=\"swatches\">",
@@ -240,53 +245,75 @@ function presetButtons() {
   ].join("");
 }
 
-function buildConfigHtml(settings) {
+function hiddenField(id, value) {
+  return "<input id=\"" + id + "\" type=\"hidden\" value=\"" + value + "\">";
+}
+
+function hiddenColorField(id, value) {
+  return hiddenField(id, hexFromNumber(value));
+}
+
+function buildConfigHtml(settings, isRound, isBw) {
+  var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
+
   return [
     "<!doctype html>",
     "<html>",
     "<head>",
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "<style>",
-    "body{margin:0;padding:18px;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;background:#111;color:#eee;}",
+    "body{margin:0;padding:18px 18px 24px;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;background:#111;color:#eee;}",
     "h1{font-size:20px;margin:0 0 18px;}",
     "label{display:block;font-weight:700;margin:14px 0 8px;}",
     "input,select,button{box-sizing:border-box;font-size:18px;}",
-    "select{height:44px;background:#222;color:#eee;border:1px solid #555;padding:0 10px;}",
+    "select{display:block;min-width:164px;max-width:100%;height:44px;background:#222;color:#eee;border:1px solid #555;padding:0 10px;}",
     ".preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;}",
     ".preset{height:46px;background:#222;color:#eee;border:1px solid #555;text-align:left;padding:6px 8px;}",
+    ".preset:focus,.preset:active{border-color:#aaa;}",
     ".swatches{display:inline-flex;vertical-align:middle;margin-right:8px;border:1px solid #666;}",
     ".swatches span{display:block;width:10px;height:16px;}",
     ".color-row{position:relative;width:44px;height:44px;}",
     ".color-preview{display:block;width:40px;height:40px;border:2px solid #777;border-radius:0;}",
     "input[type=color]{position:absolute;inset:0;width:44px;height:44px;opacity:0;}",
-    "#save{height:48px;margin-top:22px;background:#ddd;color:#111;border:0;font-weight:700;}",
+    "#save{display:block;width:100%;height:48px;margin-top:24px;background:#ddd;color:#111;border:0;font-weight:700;}",
     "</style>",
     "</head>",
     "<body>",
     "<h1>Minute Blocks</h1>",
-    presetButtons(),
-    field("Background", "background", settings.BackgroundColor),
-    field("Ring", "ring", settings.RingColor),
-    field("Complications", "complication", settings.ComplicationColor),
-    field("Center digits", "hour", settings.HourColor),
+    presetButtons(presets, isBw ? "Display" : "Color preset"),
+    isBw ? hiddenColorField("background", settings.BackgroundColor) :
+      field("Background", "background", settings.BackgroundColor),
+    isBw ? hiddenColorField("ring", settings.RingColor) :
+      field("Ring", "ring", settings.RingColor),
+    isBw ? hiddenColorField("complication", settings.ComplicationColor) :
+      field("Complications", "complication", settings.ComplicationColor),
+    isBw ? hiddenColorField("hour", settings.HourColor) :
+      field("Center digits", "hour", settings.HourColor),
     selectField("Time digits", "timeMode", settings.TimeMode, [
       { value: 0, label: "Watch setting" },
       { value: 1, label: "12 hour" },
       { value: 2, label: "24 hour" }
     ]),
-    selectField("Complication size", "complicationSize", settings.ComplicationSize, [
-      { value: 0, label: "Normal" },
-      { value: 1, label: "Medium" },
-      { value: 2, label: "Large" }
-    ]),
+    isRound ? hiddenField("complicationSize", settings.ComplicationSize) :
+      selectField("Complication size", "complicationSize", settings.ComplicationSize, [
+        { value: 0, label: "Normal" },
+        { value: 1, label: "Medium" },
+        { value: 2, label: "Large" }
+      ]),
     selectField("Complication visibility", "complicationVisibility", settings.ComplicationVisibility, [
       { value: 0, label: "Always shown" },
       { value: 1, label: "Tap to show" }
     ]),
-    selectField("Top left", "complicationTopLeft", settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
-    selectField("Top right", "complicationTopRight", settings.ComplicationTopRight, COMPLICATION_OPTIONS),
-    selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight, COMPLICATION_OPTIONS),
-    selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft, COMPLICATION_OPTIONS),
+    selectField(isRound ? "Detail 1" : "Top left", "complicationTopLeft",
+                settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
+    selectField(isRound ? "Detail 2" : "Top right", "complicationTopRight",
+                settings.ComplicationTopRight, COMPLICATION_OPTIONS),
+    isRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
+      selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
+                  COMPLICATION_OPTIONS),
+    isRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
+      selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
+                  COMPLICATION_OPTIONS),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -295,12 +322,13 @@ function buildConfigHtml(settings) {
     "</select>",
     "<button id=\"save\">Save</button>",
     "<script>",
-    "var presets=" + JSON.stringify(COLOR_PRESETS) + ";",
+    "var presets=" + JSON.stringify(presets) + ";",
     "function setColor(id,value){",
     "var input=document.getElementById(id);",
     "var preview=document.getElementById(id+'Preview');",
     "var hex=('#'+('000000'+Number(value).toString(16)).slice(-6));",
     "input.value=hex;",
+    "if(!preview){return;}",
     "preview.style.background=hex;",
     "}",
     "['background','ring','complication','hour'].forEach(function(id){",
@@ -334,7 +362,12 @@ function buildConfigHtml(settings) {
     "WeatherEnabled:document.getElementById('weatherEnabled').checked?1:0,",
     "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10)",
     "};",
-    "document.location='pebblejs://close#'+encodeURIComponent(JSON.stringify(settings));",
+    "var encoded=encodeURIComponent(JSON.stringify(settings));",
+    "var match=(location.search+location.hash).match(/[?#&]return_to=([^&#]+)/);",
+    "var target=match?decodeURIComponent(match[1])+encoded:'pebblejs://close#'+encoded;",
+    "if(!match&&location.protocol==='file:'){alert('Open this with pebble emu-app-config --file so Save has an emulator return URL.');return;}",
+    "document.getElementById('save').textContent='Saving...';",
+    "window.location.href=target;",
     "};",
     "</script>",
     "</body>",
@@ -349,7 +382,11 @@ Pebble.addEventListener("ready", function() {
 });
 
 Pebble.addEventListener("showConfiguration", function() {
-  Pebble.openURL("data:text/html," + encodeURIComponent(buildConfigHtml(loadSettings())));
+  var info = typeof Pebble.getActiveWatchInfo === "function" ? Pebble.getActiveWatchInfo() : {};
+  var platform = info && info.platform ? info.platform : "";
+  var isBw = platform === "aplite" || platform === "diorite";
+  Pebble.openURL("data:text/html," +
+                 encodeURIComponent(buildConfigHtml(loadSettings(), platform === "chalk", isBw)));
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {

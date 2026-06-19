@@ -18,6 +18,8 @@ Pebble Time 2 / `emery` screen.
 | --- | --- | --- |
 | ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
 | ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
+| ![Minute Blocks on Pebble / Pebble 2 with event overlay](store-assets/screenshots/aplite-overlay.png) | Event overlay not shown on round | ![Minute Blocks on Pebble Time 2 with event overlay](store-assets/screenshots/emery-overlay.png) |
+| ![Minute Blocks on Pebble / Pebble 2 with event overlay and complications visible](store-assets/screenshots/aplite-overlay-active.png) | Event overlay not shown on round | ![Minute Blocks on Pebble Time 2 with event overlay and complications visible](store-assets/screenshots/emery-overlay-active.png) |
 
 The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
@@ -90,13 +92,13 @@ only embeds the small `resources/images/menu_icon.png` menu icon.
 
 ### Screenshots
 
-| Platform | Normal | Active complications | Event overlay |
-| --- | --- | --- | --- |
-| Pebble / Pebble 2 (`aplite`) | [Normal](store-assets/screenshots/aplite-normal.png) | [Active](store-assets/screenshots/aplite-active.png) | [Overlay](store-assets/screenshots/aplite-overlay.png) |
-| Pebble Time / Time Steel (`basalt`) | [Normal](store-assets/screenshots/basalt-normal.png) | [Active](store-assets/screenshots/basalt-active.png) | [Overlay](store-assets/screenshots/basalt-overlay.png) |
-| Pebble Time Round (`chalk`) | [Normal](store-assets/screenshots/chalk-normal.png) | [Active](store-assets/screenshots/chalk-active.png) | - |
-| Pebble 2 SE (`diorite`) | [Normal](store-assets/screenshots/diorite-normal.png) | [Active](store-assets/screenshots/diorite-active.png) | [Overlay](store-assets/screenshots/diorite-overlay.png) |
-| Pebble Time 2 (`emery`) | [Normal](store-assets/screenshots/emery-normal.png) | [Active](store-assets/screenshots/emery-active.png) | [Overlay](store-assets/screenshots/emery-overlay.png) |
+| Platform | Normal | Active complications | Event overlay | Active overlay |
+| --- | --- | --- | --- | --- |
+| Pebble / Pebble 2 (`aplite`) | [Normal](store-assets/screenshots/aplite-normal.png) | [Active](store-assets/screenshots/aplite-active.png) | [Overlay](store-assets/screenshots/aplite-overlay.png) | [Active overlay](store-assets/screenshots/aplite-overlay-active.png) |
+| Pebble Time / Time Steel (`basalt`) | [Normal](store-assets/screenshots/basalt-normal.png) | [Active](store-assets/screenshots/basalt-active.png) | [Overlay](store-assets/screenshots/basalt-overlay.png) | [Active overlay](store-assets/screenshots/basalt-overlay-active.png) |
+| Pebble Time Round (`chalk`) | [Normal](store-assets/screenshots/chalk-normal.png) | [Active](store-assets/screenshots/chalk-active.png) | - | - |
+| Pebble 2 SE (`diorite`) | [Normal](store-assets/screenshots/diorite-normal.png) | [Active](store-assets/screenshots/diorite-active.png) | [Overlay](store-assets/screenshots/diorite-overlay.png) | [Active overlay](store-assets/screenshots/diorite-overlay-active.png) |
+| Pebble Time 2 (`emery`) | [Normal](store-assets/screenshots/emery-normal.png) | [Active](store-assets/screenshots/emery-active.png) | [Overlay](store-assets/screenshots/emery-overlay.png) | [Active overlay](store-assets/screenshots/emery-overlay-active.png) |
 
 Regenerate the screenshot set with:
 

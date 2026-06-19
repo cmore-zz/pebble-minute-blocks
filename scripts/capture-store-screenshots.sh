@@ -165,6 +165,8 @@ capture_screenshot() {
     args+=(--tap)
   elif [[ "$mode" == "overlay" ]]; then
     args+=(--overlay)
+  elif [[ "$mode" == "overlay-active" ]]; then
+    args+=(--overlay --tap)
   fi
 
   args+=("$output")
@@ -185,6 +187,9 @@ done
 for platform in "${OVERLAY_PLATFORMS[@]}"; do
   echo "==> ${platform}: overlay screenshot"
   capture_screenshot "$platform" overlay "$OUT_DIR/${platform}-overlay.png"
+
+  echo "==> ${platform}: overlay active screenshot"
+  capture_screenshot "$platform" overlay-active "$OUT_DIR/${platform}-overlay-active.png"
 done
 
 echo "Screenshots written to $OUT_DIR"

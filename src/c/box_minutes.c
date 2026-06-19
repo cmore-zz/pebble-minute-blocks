@@ -25,7 +25,7 @@
 #define HOUR_COMPACT_PIXEL_SIZE 6
 #define HOUR_OVERLAY_PIXEL_SIZE 5
 #define HOUR_Y_OFFSET 0
-#elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_DIORITE)
+#elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_DIORITE)
 #define FUTURE_MARKER_SIZE 2
 #define ACTIVE_MARKER_SIZE 6
 #define COMPLETE_MARKER_SIZE 10
@@ -737,6 +737,9 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   GPoint center = grect_center_point(&content_bounds);
   int16_t radius = (content_bounds.size.w < content_bounds.size.h ?
                     content_bounds.size.w : content_bounds.size.h) / 2 - 12;
+  if (is_obstructed && PBL_IF_ROUND_ELSE(false, complications_visible())) {
+    radius -= 3;
+  }
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);

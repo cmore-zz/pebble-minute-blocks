@@ -12,6 +12,13 @@ complications around the main hour.
 The face has separate sizing for compact Pebble Time-era screens and the larger
 Pebble Time 2 / `emery` screen.
 
+## Screenshots
+
+| Pebble / Pebble 2 | Pebble Time Round | Pebble Time 2 |
+| --- | --- | --- |
+| ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
+| ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
+
 The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
 status labels and numbers stay crisp on low-resolution Pebble screens.

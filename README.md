@@ -18,8 +18,6 @@ Pebble Time 2 / `emery` screen.
 | --- | --- | --- |
 | ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
 | ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
-| ![Minute Blocks on Pebble / Pebble 2 with event overlay](store-assets/screenshots/aplite-overlay.png) | Event overlay not shown on round | ![Minute Blocks on Pebble Time 2 with event overlay](store-assets/screenshots/emery-overlay.png) |
-| ![Minute Blocks on Pebble / Pebble 2 with event overlay and complications visible](store-assets/screenshots/aplite-overlay-active.png) | Event overlay not shown on round | ![Minute Blocks on Pebble Time 2 with event overlay and complications visible](store-assets/screenshots/emery-overlay-active.png) |
 
 The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small

@@ -342,10 +342,11 @@ static int16_t complication_text_width(int16_t normal, int16_t medium, int16_t l
 static GRect corner_rect(GRect bounds, bool right, bool bottom, int16_t width, int16_t height,
                          bool tight) {
   int16_t horizontal_margin = tight ? 0 : 4;
+  int16_t top_offset = -4;
   int16_t bottom_margin = tight ? 0 : 2;
   int16_t x = bounds.origin.x + (right ? bounds.size.w - width - horizontal_margin :
                                           horizontal_margin);
-  int16_t y = bounds.origin.y + (bottom ? bounds.size.h - height - bottom_margin : 0);
+  int16_t y = bounds.origin.y + (bottom ? bounds.size.h - height - bottom_margin : top_offset);
   return GRect(x, y, width, height);
 }
 

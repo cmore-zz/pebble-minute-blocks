@@ -535,8 +535,13 @@ static void draw_pixel_hour(GContext *ctx, GRect bounds, HourMode mode) {
   const int16_t digit_gap = pixel;
   const int16_t total_width = draw_tens ? digit_width * 2 + digit_gap : digit_width;
   int16_t x = bounds.origin.x + (bounds.size.w - total_width) / 2;
+  // Compact mode makes room for round center complications. chalk nudges the
+  // digits up to fit two lines below; gabbro's taller screen keeps them centered
+  // so complications can sit both above and below.
+  int16_t round_compact_dy = bounds.size.h >= 220 ? 0 : -20;
   int16_t y = bounds.origin.y + (bounds.size.h - digit_height) / 2 +
-              PBL_IF_ROUND_ELSE(mode == HourModeCompact ? -20 : HOUR_Y_OFFSET, HOUR_Y_OFFSET);
+              PBL_IF_ROUND_ELSE(mode == HourModeCompact ? round_compact_dy : HOUR_Y_OFFSET,
+                                HOUR_Y_OFFSET);
 
   if (draw_tens) {
     draw_pixel_digit(ctx, tens, GPoint(x, y), pixel, gap);
@@ -972,11 +977,37 @@ static void draw_center_complications(GContext *ctx, GRect bounds, bool tight) {
   }
 }
 
-static void draw_round_center_complications(GContext *ctx, GRect bounds) {
+// Draw up to two complications (from slot_a then slot_b) stacked either just
+// above or just below the centered compact digits, for the taller round screen.
+static void draw_round_complication_stack(GContext *ctx, GRect bounds, GFont font,
+                                          int slot_a, int slot_b, bool above) {
   char labels[2][16];
-  int count = 0;
-  GFont font = s_visitor_font_15;
+  int n = 0;
+  if (format_complication_text(s_settings.complications[slot_a], labels[n], sizeof(labels[n]))) {
+    n++;
+  }
+  if (format_complication_text(s_settings.complications[slot_b], labels[n], sizeof(labels[n]))) {
+    n++;
+  }
+  if (n == 0) {
+    return;
+  }
 
+  const int16_t line_h = 22;
+  const int16_t gap = 30;  // clearance from the centered compact digits
+  int16_t mid = bounds.origin.y + bounds.size.h / 2;
+  GRect measure_rect = GRect(0, 0, 120, 20);
+
+  for (int i = 0; i < n; i++) {
+    int16_t y = above ? mid - gap - line_h * (n - i) : mid + gap + line_h * i;
+    GSize size = text_size(labels[i], font, measure_rect);
+    int16_t x = bounds.origin.x + (bounds.size.w - size.w) / 2;
+    graphics_draw_text(ctx, labels[i], font, GRect(x, y, size.w, 20),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  }
+}
+
+static void draw_round_center_complications(GContext *ctx, GRect bounds) {
   if (!PBL_IF_ROUND_ELSE(true, false)) {
     return;
   }
@@ -985,6 +1016,21 @@ static void draw_round_center_complications(GContext *ctx, GRect bounds) {
     return;
   }
 
+  GFont font = s_visitor_font_15;
+  graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
+
+  // gabbro's taller round screen fits two lines above the digits and two below;
+  // chalk only has room for two stacked below.
+  if (bounds.size.h >= 220) {
+    draw_round_complication_stack(ctx, bounds, font, ComplicationSlotTopLeft,
+                                  ComplicationSlotTopRight, true);
+    draw_round_complication_stack(ctx, bounds, font, ComplicationSlotBottomLeft,
+                                  ComplicationSlotBottomRight, false);
+    return;
+  }
+
+  char labels[2][16];
+  int count = 0;
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT && count < 2; slot++) {
     if (format_complication_text(s_settings.complications[slot], labels[count],
                                  sizeof(labels[count]))) {
@@ -1002,7 +1048,6 @@ static void draw_round_center_complications(GContext *ctx, GRect bounds) {
   int16_t y = bounds.origin.y + bounds.size.h / 2 + (count > 1 ? 12 : 18);
   int16_t height = 18;
 
-  graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
   graphics_draw_text(ctx, labels[0], font, GRect(first_x, y, first_size.w, height),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 

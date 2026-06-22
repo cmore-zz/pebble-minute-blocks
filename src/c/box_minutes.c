@@ -30,7 +30,7 @@
 #define ACTIVE_MARKER_SIZE 6
 #define COMPLETE_MARKER_SIZE 10
 #define FUTURE_MARKER_OFFSET 2
-#define ACTIVE_MARKER_OFFSET 3
+#define ACTIVE_MARKER_OFFSET 4
 #define HOUR_PIXEL_SIZE 8
 #define HOUR_COMPACT_PIXEL_SIZE 7
 #define HOUR_OVERLAY_PIXEL_SIZE 6
@@ -56,6 +56,12 @@
 #define COMPLICATION_SLOT_COUNT 4
 #define COMPLICATION_REVEAL_MS 7000
 #define LIGHT_POLL_MS 1000
+#define KINETIC_FRAME_MS 33
+#define KINETIC_FALL_PIXELS_PER_SECOND 220
+#define KINETIC_SMASH_DURATION_MS 1500
+#define KINETIC_FRAGMENT_DURATION_MS 900
+#define KINETIC_TOP_HOUR_FALL_MS 1300
+#define KINETIC_TOP_HOUR_STAGGER_MS 700
 
 enum {
   TimeModeWatch = 0,
@@ -72,6 +78,12 @@ enum {
 enum {
   ComplicationVisibilityAlways = 0,
   ComplicationVisibilityOnTap = 1,
+};
+
+enum {
+  SecondsVisibilityNever = 0,
+  SecondsVisibilityAlways = 1,
+  SecondsVisibilityOnTap = 2,
 };
 
 enum {
@@ -116,6 +128,7 @@ enum {
   ConfigKeyComplicationTopRight = 10015,
   ConfigKeyComplicationBottomRight = 10016,
   ConfigKeyComplicationBottomLeft = 10017,
+  ConfigKeySecondsVisibility = 10018,
 };
 
 enum {
@@ -137,6 +150,7 @@ enum {
   PersistKeyComplicationTopRight,
   PersistKeyComplicationBottomRight,
   PersistKeyComplicationBottomLeft,
+  PersistKeySecondsVisibility,
 };
 
 enum {
@@ -158,6 +172,7 @@ typedef struct {
   int weather_low;
   bool weather_available;
   int complication_visibility;
+  int seconds_visibility;
   int complications[COMPLICATION_SLOT_COUNT];
 } Settings;
 
@@ -169,6 +184,9 @@ static bool s_bluetooth_connected;
 static bool s_complications_revealed;
 static AppTimer *s_complication_reveal_timer;
 static AppTimer *s_light_poll_timer;
+#ifdef MINUTE_BLOCKS_KINETIC
+static AppTimer *s_kinetic_frame_timer;
+#endif
 static bool s_light_poll_active;
 static bool s_was_light_on;
 static Settings s_settings;
@@ -178,6 +196,10 @@ static GFont s_visitor_font_25;
 
 static void refresh_time(void);
 static void update_light_polling(void);
+static void update_tick_subscription(void);
+#ifdef MINUTE_BLOCKS_KINETIC
+static void kinetic_update_frame_timer(void);
+#endif
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
   {0x7, 0x5, 0x5, 0x5, 0x7},
@@ -211,12 +233,111 @@ static void draw_marker_pixel(GContext *ctx, GPoint center, int16_t size) {
   fill_centered_rect(ctx, center, size);
 }
 
+static GPoint marker_center_for_index(GPoint center, int16_t radius, int marker_index) {
+  int32_t angle = DEG_TO_TRIGANGLE((marker_index + 1) * 30);
+  return point_on_circle(center, radius, angle);
+}
+
+static GPoint marker_dot_for_index(GPoint marker_center, int dot_index, int16_t offset) {
+  int16_t row = dot_index < 2 ? -offset : offset;
+  int16_t col = dot_index % 2 == 0 ? -offset : offset;
+  return GPoint(marker_center.x + col, marker_center.y + row);
+}
+
+// Clock order for the four dots within a marker: top-right, bottom-right,
+// bottom-left, top-left (clockwise from upper right, like an analog quadrant).
+// Minute fill, the seconds sweep, and the kinetic incoming pixel all share this
+// order so the dots always progress consistently.
+static int ordered_dot_index(int progress_index) {
+  static const uint8_t order[DOT_COUNT] = {1, 3, 2, 0};
+  return order[progress_index % DOT_COUNT];
+}
+
+#ifdef MINUTE_BLOCKS_KINETIC
+static int32_t kinetic_milliseconds_until_minute(void) {
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
+  struct tm *time_now = localtime(&now);
+  if (!time_now) {
+    return -1;
+  }
+
+  return (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
+}
+
+static int32_t kinetic_milliseconds_after_minute(void) {
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
+  struct tm *time_now = localtime(&now);
+  if (!time_now) {
+    return -1;
+  }
+
+  return time_now->tm_sec * 1000 + milliseconds;
+}
+
+static int16_t kinetic_lerp_int16(int16_t from, int16_t to, int32_t amount) {
+  return from + ((to - from) * amount) / 1000;
+}
+
+static int32_t kinetic_smash_amount(int32_t elapsed) {
+  // Choreography over KINETIC_SMASH_DURATION_MS (1500ms). amount is a lerp factor
+  // toward the center: 0 = dots spread out, 1000 = collapsed onto the block,
+  // negative = pulled outward. Think spring-loaded: a quick yank to full tension,
+  // a brief held strain, then a single fast SNAP releasing straight to the center
+  // with no bounce -- it hits a hard stop and sticks, and the completion-fragment
+  // burst at :00 carries the released energy outward.
+  if (elapsed < 400) {                 // quick yank outward
+    return kinetic_lerp_int16(0, -1200, (elapsed * 1000) / 400);
+  } else if (elapsed < 700) {          // ease into full stretch
+    return kinetic_lerp_int16(-1200, -1500, ((elapsed - 400) * 1000) / 300);
+  } else if (elapsed < 1380) {         // held taut, straining
+    return kinetic_lerp_int16(-1500, -1550, ((elapsed - 700) * 1000) / 680);
+  } else if (elapsed < 1490) {         // SNAP: fast release straight to center
+    return kinetic_lerp_int16(-1550, 1000, ((elapsed - 1380) * 1000) / 110);
+  }
+
+  return 1000;  // landed: stick on the block as the fragments burst at :00
+}
+
+static bool kinetic_draw_smashing_marker(GContext *ctx, GPoint marker_center, int marker_index) {
+  if (s_time.tm_min % 5 != 4 || marker_index != s_time.tm_min / 5) {
+    return false;
+  }
+
+  int32_t milliseconds_until_minute = kinetic_milliseconds_until_minute();
+  if (milliseconds_until_minute < 0 || milliseconds_until_minute > KINETIC_SMASH_DURATION_MS) {
+    return false;
+  }
+
+  int32_t elapsed = KINETIC_SMASH_DURATION_MS - milliseconds_until_minute;
+  int32_t amount = kinetic_smash_amount(elapsed);
+  for (int i = 0; i < DOT_COUNT; i++) {
+    GPoint start = marker_dot_for_index(marker_center, ordered_dot_index(i), ACTIVE_MARKER_OFFSET);
+    GPoint position = GPoint(
+      kinetic_lerp_int16(start.x, marker_center.x, amount),
+      kinetic_lerp_int16(start.y, marker_center.y, amount)
+    );
+    draw_marker_pixel(ctx, position, ACTIVE_MARKER_SIZE);
+  }
+
+  return true;
+}
+#endif
+
 static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker_index) {
   int minute = s_time.tm_min;
   int completed_markers = minute / 5;
   int active_progress = minute % 5;
-  int32_t angle = DEG_TO_TRIGANGLE((marker_index + 1) * 30);
-  GPoint marker_center = point_on_circle(center, radius, angle);
+  GPoint marker_center = marker_center_for_index(center, radius, marker_index);
+
+#ifdef MINUTE_BLOCKS_KINETIC
+  if (kinetic_draw_smashing_marker(ctx, marker_center, marker_index)) {
+    return;
+  }
+#endif
 
   if (marker_index < completed_markers) {
     fill_centered_rect(ctx, marker_center, COMPLETE_MARKER_SIZE);
@@ -227,12 +348,127 @@ static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker
   for (int i = 0; i < DOT_COUNT; i++) {
     bool is_active_pixel = is_active && i < active_progress;
     int16_t offset = is_active_pixel ? ACTIVE_MARKER_OFFSET : FUTURE_MARKER_OFFSET;
-    int16_t row = i < 2 ? -offset : offset;
-    int16_t col = i % 2 == 0 ? -offset : offset;
-    GPoint dot = GPoint(marker_center.x + col, marker_center.y + row);
+    GPoint dot = marker_dot_for_index(marker_center, ordered_dot_index(i), offset);
     draw_marker_pixel(ctx, dot, is_active_pixel ? ACTIVE_MARKER_SIZE : FUTURE_MARKER_SIZE);
   }
 }
+
+#ifdef MINUTE_BLOCKS_KINETIC
+static bool kinetic_next_pixel_target(GPoint center, int16_t radius, GPoint *target) {
+  int next_minute = (s_time.tm_min + 1) % 60;
+  int next_active_progress = next_minute % 5;
+
+  if (next_active_progress == 0) {
+    return false;
+  }
+
+  int marker_index = next_minute / 5;
+  int dot_index = ordered_dot_index(next_active_progress - 1);
+  GPoint marker_center = marker_center_for_index(center, radius, marker_index);
+  *target = marker_dot_for_index(marker_center, dot_index, ACTIVE_MARKER_OFFSET);
+  return true;
+}
+
+static bool kinetic_incoming_pixel_position(GPoint center, int16_t radius, GPoint *position) {
+  GPoint target;
+  if (!kinetic_next_pixel_target(center, radius, &target)) {
+    return false;
+  }
+
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
+  struct tm *time_now = localtime(&now);
+  if (!time_now) {
+    return false;
+  }
+
+  int32_t milliseconds_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
+  int16_t start_y = -ACTIVE_MARKER_SIZE;
+  int16_t travel_distance = target.y - start_y;
+  int32_t fall_duration = ((int32_t)travel_distance * 1000) / KINETIC_FALL_PIXELS_PER_SECOND;
+
+  if (fall_duration <= 0 || milliseconds_until_minute > fall_duration) {
+    return false;
+  }
+
+  int32_t elapsed = fall_duration - milliseconds_until_minute;
+  position->x = target.x;
+  position->y = start_y + (travel_distance * elapsed) / fall_duration;
+  return true;
+}
+
+static void draw_kinetic_incoming_pixel(GContext *ctx, GPoint center, int16_t radius) {
+  GPoint position;
+  if (kinetic_incoming_pixel_position(center, radius, &position)) {
+    draw_marker_pixel(ctx, position, ACTIVE_MARKER_SIZE);
+  }
+}
+
+static void draw_kinetic_completion_fragments(GContext *ctx, GPoint center, int16_t radius) {
+  if (s_time.tm_min % 5 != 0) {
+    return;
+  }
+
+  int32_t elapsed = kinetic_milliseconds_after_minute();
+  if (elapsed < 0 || elapsed > KINETIC_FRAGMENT_DURATION_MS) {
+    return;
+  }
+
+  int marker_index = (s_time.tm_min / 5 + MARKER_COUNT - 1) % MARKER_COUNT;
+  GPoint origin = marker_center_for_index(center, radius, marker_index);
+  int16_t fragment_size = ACTIVE_MARKER_SIZE / 3;
+  if (fragment_size < 1) {
+    fragment_size = 1;
+  }
+
+  const int16_t velocity_x[4] = { -70, 50, -35, 75 };
+  const int16_t velocity_y[4] = { -95, -75, -120, -60 };
+  const int16_t gravity = 240;
+
+  for (int i = 0; i < 4; i++) {
+    int32_t x = origin.x + (velocity_x[i] * elapsed) / 1000;
+    int32_t y = origin.y + (velocity_y[i] * elapsed) / 1000 +
+                (gravity * elapsed * elapsed) / 1000000;
+    draw_marker_pixel(ctx, GPoint((int16_t)x, (int16_t)y), fragment_size);
+  }
+}
+
+static int32_t kinetic_top_hour_start_offset(int marker_index) {
+  static const int16_t offsets[MARKER_COUNT] = {
+    40, 430, 160, 650, 280, 520, 80, 360, 700, 220, 580, 120
+  };
+  return offsets[marker_index] % KINETIC_TOP_HOUR_STAGGER_MS;
+}
+
+static void draw_kinetic_top_hour_falling_blocks(GContext *ctx, GRect bounds,
+                                                 GPoint center, int16_t radius) {
+  if (s_time.tm_min != 0) {
+    return;
+  }
+
+  int32_t elapsed = kinetic_milliseconds_after_minute();
+  if (elapsed < 0 || elapsed > KINETIC_TOP_HOUR_FALL_MS + KINETIC_TOP_HOUR_STAGGER_MS) {
+    return;
+  }
+
+  int16_t end_y = bounds.origin.y + bounds.size.h + COMPLETE_MARKER_SIZE;
+  for (int marker = 0; marker < MARKER_COUNT; marker++) {
+    int32_t marker_elapsed = elapsed - kinetic_top_hour_start_offset(marker);
+    if (marker_elapsed < 0) {
+      marker_elapsed = 0;
+    }
+    if (marker_elapsed > KINETIC_TOP_HOUR_FALL_MS) {
+      continue;
+    }
+
+    GPoint start = marker_center_for_index(center, radius, marker);
+    int32_t amount = (marker_elapsed * 1000) / KINETIC_TOP_HOUR_FALL_MS;
+    int16_t y = kinetic_lerp_int16(start.y, end_y, amount);
+    fill_centered_rect(ctx, GPoint(start.x, y), COMPLETE_MARKER_SIZE);
+  }
+}
+#endif
 
 static void draw_pixel_digit(GContext *ctx, int digit, GPoint origin, int16_t pixel_size, int16_t gap) {
   for (int row = 0; row < PIXEL_ROWS; row++) {
@@ -606,6 +842,36 @@ static bool round_complications_visible(void) {
   return s_settings.complication_visibility == ComplicationVisibilityOnTap && s_complications_revealed;
 }
 
+static bool seconds_visible(void) {
+  return s_settings.seconds_visibility == SecondsVisibilityAlways ||
+         (s_settings.seconds_visibility == SecondsVisibilityOnTap && s_complications_revealed);
+}
+
+static void draw_seconds_overlay(GContext *ctx, GPoint center, int16_t radius) {
+  if (!seconds_visible()) {
+    return;
+  }
+
+  int second = s_time.tm_sec == 0 ? 60 : s_time.tm_sec;
+  int marker_index = (second - 1) / 5;
+  int step = (second - 1) % 5;
+  GPoint marker_center = marker_center_for_index(center, radius, marker_index);
+  int completed_markers = s_time.tm_min / 5;
+  bool is_completed = marker_index < completed_markers;
+
+  if (step < DOT_COUNT) {
+    graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.background_color));
+    draw_marker_pixel(ctx, marker_dot_for_index(marker_center, ordered_dot_index(step),
+                                                FUTURE_MARKER_OFFSET),
+                      FUTURE_MARKER_SIZE);
+    return;
+  }
+
+  graphics_context_set_fill_color(ctx, GColorFromHEX(is_completed ? s_settings.background_color :
+                                                     s_settings.ring_color));
+  draw_marker_pixel(ctx, marker_center, FUTURE_MARKER_SIZE);
+}
+
 static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, bool tight) {
   char date_label[8];
   char date_number[4];
@@ -748,6 +1014,16 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   for (int i = 0; i < MARKER_COUNT; i++) {
     draw_marker(ctx, center, radius, i);
   }
+  draw_seconds_overlay(ctx, center, radius);
+#ifdef MINUTE_BLOCKS_KINETIC
+  // draw_seconds_overlay leaves the fill color set to the background/ring color it
+  // last drew with; the kinetic blocks are ring-colored, so reset before drawing them
+  // (otherwise the falling block renders in the background color and is invisible).
+  graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
+  draw_kinetic_incoming_pixel(ctx, center, radius);
+  draw_kinetic_completion_fragments(ctx, center, radius);
+  draw_kinetic_top_hour_falling_blocks(ctx, content_bounds, center, radius);
+#endif
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
   draw_pixel_hour(ctx, content_bounds, hour_mode);
@@ -778,6 +1054,7 @@ static void settings_set_defaults(void) {
     .weather_low = 0,
     .weather_available = false,
     .complication_visibility = ComplicationVisibilityOnTap,
+    .seconds_visibility = SecondsVisibilityOnTap,
     .complications = {
       ComplicationDate,
       ComplicationWeather,
@@ -826,6 +1103,13 @@ static void settings_load(void) {
       s_settings.complication_visibility > ComplicationVisibilityOnTap) {
     s_settings.complication_visibility = ComplicationVisibilityOnTap;
   }
+  s_settings.seconds_visibility = persist_exists(PersistKeySecondsVisibility) ?
+                                  persist_read_int(PersistKeySecondsVisibility) :
+                                  SecondsVisibilityOnTap;
+  if (s_settings.seconds_visibility < SecondsVisibilityNever ||
+      s_settings.seconds_visibility > SecondsVisibilityOnTap) {
+    s_settings.seconds_visibility = SecondsVisibilityNever;
+  }
 
   int persist_keys[COMPLICATION_SLOT_COUNT] = {
     PersistKeyComplicationTopLeft,
@@ -864,6 +1148,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyComplicationTopRight, s_settings.complications[ComplicationSlotTopRight]);
   persist_write_int(PersistKeyComplicationBottomRight, s_settings.complications[ComplicationSlotBottomRight]);
   persist_write_int(PersistKeyComplicationBottomLeft, s_settings.complications[ComplicationSlotBottomLeft]);
+  persist_write_int(PersistKeySecondsVisibility, s_settings.seconds_visibility);
 }
 
 static void request_weather(void) {
@@ -899,6 +1184,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *complication_top_right = dict_find(iter, ConfigKeyComplicationTopRight);
   Tuple *complication_bottom_right = dict_find(iter, ConfigKeyComplicationBottomRight);
   Tuple *complication_bottom_left = dict_find(iter, ConfigKeyComplicationBottomLeft);
+  Tuple *seconds_visibility = dict_find(iter, ConfigKeySecondsVisibility);
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -951,6 +1237,12 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       s_settings.complication_visibility = visibility;
     }
   }
+  if (seconds_visibility) {
+    int visibility = (int)seconds_visibility->value->int32;
+    if (visibility >= SecondsVisibilityNever && visibility <= SecondsVisibilityOnTap) {
+      s_settings.seconds_visibility = visibility;
+    }
+  }
   if (complication_top_left) {
     int type = (int)complication_top_left->value->int32;
     if (valid_complication(type)) {
@@ -978,6 +1270,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 
   settings_save();
   update_light_polling();
+  update_tick_subscription();
   if (s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
   }
@@ -994,11 +1287,19 @@ static void refresh_time(void) {
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   s_time = *tick_time;
-  layer_mark_dirty(s_canvas_layer);
+  if ((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0 ||
+      ((units_changed & SECOND_UNIT) && seconds_visible())) {
+    layer_mark_dirty(s_canvas_layer);
 
-  if (tick_time->tm_min % 30 == 0) {
-    request_weather();
+    if (((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0) &&
+        tick_time->tm_min % 30 == 0) {
+      request_weather();
+    }
   }
+
+#ifdef MINUTE_BLOCKS_KINETIC
+  kinetic_update_frame_timer();
+#endif
 }
 
 static void battery_handler(BatteryChargeState state) {
@@ -1039,13 +1340,15 @@ static void unobstructed_did_change_handler(void *context) {
 static void complication_reveal_timer_handler(void *context) {
   s_complication_reveal_timer = NULL;
   s_complications_revealed = false;
+  update_tick_subscription();
   if (s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
   }
 }
 
-static void reveal_complications(void) {
-  if (s_settings.complication_visibility != ComplicationVisibilityOnTap) {
+static void reveal_details(void) {
+  if (s_settings.complication_visibility != ComplicationVisibilityOnTap &&
+      s_settings.seconds_visibility != SecondsVisibilityOnTap) {
     return;
   }
 
@@ -1056,13 +1359,14 @@ static void reveal_complications(void) {
   s_complication_reveal_timer = app_timer_register(COMPLICATION_REVEAL_MS,
                                                    complication_reveal_timer_handler,
                                                    NULL);
+  update_tick_subscription();
   if (s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
   }
 }
 
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
-  reveal_complications();
+  reveal_details();
 }
 
 static void light_poll_timer_handler(void *context) {
@@ -1074,7 +1378,7 @@ static void light_poll_timer_handler(void *context) {
 
   bool is_light_on = light_is_on();
   if (is_light_on && !s_was_light_on) {
-    reveal_complications();
+    reveal_details();
   }
   s_was_light_on = is_light_on;
 
@@ -1082,7 +1386,8 @@ static void light_poll_timer_handler(void *context) {
 }
 
 static void update_light_polling(void) {
-  bool should_poll = s_settings.complication_visibility == ComplicationVisibilityOnTap;
+  bool should_poll = s_settings.complication_visibility == ComplicationVisibilityOnTap ||
+                     s_settings.seconds_visibility == SecondsVisibilityOnTap;
 
   if (should_poll && !s_light_poll_active) {
     s_light_poll_active = true;
@@ -1100,10 +1405,62 @@ static void update_light_polling(void) {
   }
 }
 
+static void update_tick_subscription(void) {
+#ifdef MINUTE_BLOCKS_KINETIC
+  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
+  kinetic_update_frame_timer();
+#else
+  tick_timer_service_subscribe(seconds_visible() ? SECOND_UNIT : MINUTE_UNIT, tick_handler);
+#endif
+}
+
+#ifdef MINUTE_BLOCKS_KINETIC
+static bool kinetic_should_run_frame_timer(void) {
+  time_t now = time(NULL);
+  struct tm *time_now = localtime(&now);
+  if (!time_now) {
+    return false;
+  }
+
+  // The smash plays for KINETIC_SMASH_DURATION_MS (2.5s) before a marker completes,
+  // i.e. the final seconds of a min % 5 == 4 minute, so it needs frames before :59.
+  // Every minute also needs frames around the boundary for the falling pixel and
+  // completion fragments, plus the top-of-hour cascade just after :00.
+  bool smash_windup = time_now->tm_min % 5 == 4 &&
+                      (59 - time_now->tm_sec) * 1000 <= KINETIC_SMASH_DURATION_MS;
+  return smash_windup ||
+         time_now->tm_sec == 59 ||
+         time_now->tm_sec == 0 ||
+         (time_now->tm_min == 0 && time_now->tm_sec <= 2);
+}
+
+static void kinetic_frame_timer_handler(void *context) {
+  (void)context;
+  s_kinetic_frame_timer = NULL;
+
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+
+  kinetic_update_frame_timer();
+}
+
+static void kinetic_update_frame_timer(void) {
+  bool should_run = kinetic_should_run_frame_timer();
+
+  if (should_run && !s_kinetic_frame_timer) {
+    s_kinetic_frame_timer = app_timer_register(KINETIC_FRAME_MS, kinetic_frame_timer_handler, NULL);
+  } else if (!should_run && s_kinetic_frame_timer) {
+    app_timer_cancel(s_kinetic_frame_timer);
+    s_kinetic_frame_timer = NULL;
+  }
+}
+#endif
+
 #if defined(PBL_TOUCH)
 static void touch_handler(const TouchEvent *event, void *context) {
   if (event && event->type == TouchEvent_Touchdown) {
-    reveal_complications();
+    reveal_details();
   }
 }
 #endif
@@ -1147,7 +1504,7 @@ static void init(void) {
     .unload = window_unload,
   });
 
-  tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+  update_tick_subscription();
   battery_state_service_subscribe(battery_handler);
   bluetooth_connection_service_subscribe(bluetooth_handler);
   accel_tap_service_subscribe(accel_tap_handler);
@@ -1189,6 +1546,12 @@ static void deinit(void) {
     app_timer_cancel(s_light_poll_timer);
     s_light_poll_timer = NULL;
   }
+#ifdef MINUTE_BLOCKS_KINETIC
+  if (s_kinetic_frame_timer) {
+    app_timer_cancel(s_kinetic_frame_timer);
+    s_kinetic_frame_timer = NULL;
+  }
+#endif
   app_message_deregister_callbacks();
   window_destroy(s_window);
   fonts_unload();

@@ -1,0 +1,13 @@
+{
+  "name": "pebble-minute-blocks",
+  "pebble": {
+    "displayName": "Minute Blocks",
+    "uuid": "4e10c644-2684-4604-aaf3-be90703b8d95"
+  },
+  "build": {
+    "output": "build/pebble-minute-blocks.pbw",
+    "env": {
+      "MINUTE_BLOCKS_VARIANT": "classic"
+    }
+  }
+}

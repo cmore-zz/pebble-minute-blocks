@@ -1,0 +1,13 @@
+{
+  "name": "pebble-minute-blocks-kinetic",
+  "pebble": {
+    "displayName": "Minute Blocks: Kinetic",
+    "uuid": "e177766e-2387-4e97-bb71-f9c1ac866507"
+  },
+  "build": {
+    "output": "build/pebble-minute-blocks-kinetic.pbw",
+    "env": {
+      "MINUTE_BLOCKS_VARIANT": "kinetic"
+    }
+  }
+}

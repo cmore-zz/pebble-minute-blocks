@@ -8,6 +8,7 @@ var DEFAULT_SETTINGS = {
   TimeMode: 0,
   ComplicationSize: 0,
   ComplicationVisibility: 1,
+  SecondsVisibility: 2,
   ComplicationTopLeft: 1,
   ComplicationTopRight: 2,
   ComplicationBottomRight: 4,
@@ -92,6 +93,7 @@ function cloneDefaults() {
     TimeMode: DEFAULT_SETTINGS.TimeMode,
     ComplicationSize: DEFAULT_SETTINGS.ComplicationSize,
     ComplicationVisibility: DEFAULT_SETTINGS.ComplicationVisibility,
+    SecondsVisibility: DEFAULT_SETTINGS.SecondsVisibility,
     ComplicationTopLeft: DEFAULT_SETTINGS.ComplicationTopLeft,
     ComplicationTopRight: DEFAULT_SETTINGS.ComplicationTopRight,
     ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
@@ -304,6 +306,11 @@ function buildConfigHtml(settings, isRound, isBw) {
       { value: 0, label: "Always shown" },
       { value: 1, label: "Tap to show" }
     ]),
+    selectField("Seconds", "secondsVisibility", settings.SecondsVisibility, [
+      { value: 0, label: "Never" },
+      { value: 1, label: "Always" },
+      { value: 2, label: "Tap to show" }
+    ]),
     selectField(isRound ? "Detail 1" : "Top left", "complicationTopLeft",
                 settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
     selectField(isRound ? "Detail 2" : "Top right", "complicationTopRight",
@@ -355,6 +362,7 @@ function buildConfigHtml(settings, isRound, isBw) {
     "TimeMode:parseInt(document.getElementById('timeMode').value,10),",
     "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
     "ComplicationVisibility:parseInt(document.getElementById('complicationVisibility').value,10),",
+    "SecondsVisibility:parseInt(document.getElementById('secondsVisibility').value,10),",
     "ComplicationTopLeft:parseInt(document.getElementById('complicationTopLeft').value,10),",
     "ComplicationTopRight:parseInt(document.getElementById('complicationTopRight').value,10),",
     "ComplicationBottomRight:parseInt(document.getElementById('complicationBottomRight').value,10),",
@@ -403,6 +411,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.TimeMode = Number(settings.TimeMode);
     settings.ComplicationSize = Number(settings.ComplicationSize);
     settings.ComplicationVisibility = Number(settings.ComplicationVisibility);
+    settings.SecondsVisibility = Number(settings.SecondsVisibility);
     settings.ComplicationTopLeft = Number(settings.ComplicationTopLeft);
     settings.ComplicationTopRight = Number(settings.ComplicationTopRight);
     settings.ComplicationBottomRight = Number(settings.ComplicationBottomRight);

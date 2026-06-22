@@ -1,7 +1,9 @@
 #
 # This file is the default set of rules to compile a Pebble application.
 #
+import os
 import os.path
+import re
 
 top = '.'
 out = 'build'
@@ -20,10 +22,18 @@ def build(ctx):
 
     build_worker = os.path.exists('worker_src')
     binaries = []
+    variant = os.environ.get('MINUTE_BLOCKS_VARIANT')
 
     cached_env = ctx.env
     for platform in ctx.env.TARGET_PLATFORMS:
         ctx.env = ctx.all_envs[platform]
+        if variant:
+            variant_define = 'MINUTE_BLOCKS_VARIANT_{}'.format(
+                re.sub(r'[^A-Z0-9]+', '_', variant.upper()).strip('_')
+            )
+            ctx.env.append_unique('DEFINES', variant_define)
+            if variant == 'kinetic':
+                ctx.env.append_unique('DEFINES', 'MINUTE_BLOCKS_KINETIC')
         ctx.set_group(ctx.env.PLATFORM_NAME)
         app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
         ctx.pbl_build(source=ctx.path.ant_glob('src/c/**/*.c'), target=app_elf, bin_type='app')

@@ -9,15 +9,16 @@ The center uses a chunky pixel-style hour readout. Minutes live only in the
 outer ring, with small date, weather, battery, and Bluetooth status
 complications around the main hour.
 
-The face has separate sizing for compact Pebble Time-era screens and the larger
-Pebble Time 2 / `emery` screen.
+The face has per-platform sizing across the Pebble screens: the compact 144×168
+watches, the round Pebble Time Round, the larger Pebble Time 2 / `emery`, and the
+big round Pebble Round 2 / `gabbro`.
 
 ## Screenshots
 
-| Pebble / Pebble 2 | Pebble Time Round | Pebble Time 2 |
-| --- | --- | --- |
-| ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
-| ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
+| Pebble / Pebble 2 | Pebble Time Round | Pebble Round 2 | Pebble Time 2 |
+| --- | --- | --- | --- |
+| ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Round 2](store-assets/screenshots/gabbro-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
+| ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Round 2 with complications visible](store-assets/screenshots/gabbro-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
 
 The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
@@ -98,6 +99,7 @@ only embeds the small `resources/images/menu_icon.png` menu icon.
 | Pebble / Pebble 2 (`aplite`) | [Normal](store-assets/screenshots/aplite-normal.png) | [Active](store-assets/screenshots/aplite-active.png) | [Overlay](store-assets/screenshots/aplite-overlay.png) | [Active overlay](store-assets/screenshots/aplite-overlay-active.png) |
 | Pebble Time / Time Steel (`basalt`) | [Normal](store-assets/screenshots/basalt-normal.png) | [Active](store-assets/screenshots/basalt-active.png) | [Overlay](store-assets/screenshots/basalt-overlay.png) | [Active overlay](store-assets/screenshots/basalt-overlay-active.png) |
 | Pebble Time Round (`chalk`) | [Normal](store-assets/screenshots/chalk-normal.png) | [Active](store-assets/screenshots/chalk-active.png) | - | - |
+| Pebble Round 2 (`gabbro`) | [Normal](store-assets/screenshots/gabbro-normal.png) | [Active](store-assets/screenshots/gabbro-active.png) | - | - |
 | Pebble 2 SE (`diorite`) | [Normal](store-assets/screenshots/diorite-normal.png) | [Active](store-assets/screenshots/diorite-active.png) | [Overlay](store-assets/screenshots/diorite-overlay.png) | [Active overlay](store-assets/screenshots/diorite-overlay-active.png) |
 | Pebble Time 2 (`emery`) | [Normal](store-assets/screenshots/emery-normal.png) | [Active](store-assets/screenshots/emery-active.png) | [Overlay](store-assets/screenshots/emery-overlay.png) | [Active overlay](store-assets/screenshots/emery-overlay-active.png) |
 

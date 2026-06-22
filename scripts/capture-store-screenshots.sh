@@ -4,7 +4,7 @@ set -euo pipefail
 OUT_DIR="store-assets/screenshots"
 PBW="build/pebble-minute-blocks.pbw"
 PEBBLE_PYTHON="${PEBBLE_PYTHON:-/Users/cmore/.local/share/uv/tools/pebble-tool/bin/python3}"
-PLATFORMS=(basalt chalk emery aplite diorite)
+PLATFORMS=(basalt chalk emery aplite diorite gabbro)
 OVERLAY_PLATFORMS=(basalt emery aplite diorite)
 RETRIES="${RETRIES:-3}"
 RETRY_SLEEP="${RETRY_SLEEP:-3}"
@@ -62,7 +62,7 @@ if ((${#SELECTED_PLATFORMS[@]})); then
       basalt|emery|aplite|diorite)
         OVERLAY_PLATFORMS+=("$platform")
         ;;
-      chalk)
+      chalk|gabbro)
         ;;
       *)
         echo "Unknown platform: ${platform}" >&2

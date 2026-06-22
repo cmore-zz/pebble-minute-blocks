@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 0.1.0
+- Version: 1.0.0
 - Website URL:
 - Source code URL:
 - Support email:
@@ -26,15 +26,33 @@ The PBW currently targets `aplite`, `basalt`, `chalk`, `diorite`, `emery`, `flin
 
 ## Short Description
 
-A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner complications.
+A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and two center complications on round Pebble watches.
 
 ## Description
 
-Minute Blocks is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
+Minute Blocks in its default configuration is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
 
 The complication text uses the Visitor bitmap font for a crisp low-resolution look that matches Pebble displays. Complications can stay visible or hide until the watch is raised, tapped, or the backlight comes on.
 
 Weather uses the phone's location permission and fetches current and forecast temperatures from Open-Meteo. No API key is required.
+
+Two optional extras can be switched on in settings (both off by default): a subtle seconds indicator that sweeps the ring, and a "Kinetic" mode that animates the blocks falling, smashing together, and cascading away at the top of the hour.
+
+## Animations
+
+Both features below are optional — enable them in the Pebble app settings.
+
+A subtle seconds indicator can sweep the ring: set it to never show, reveal on
+shake, tap, or backlight, or stay always on.
+
+A "Kinetic" mode (off by default) adds playful motion to the blocks:
+* a new block falls into place as each minute ticks (minutes 1–4 of every five)
+* the four blocks pull apart and snap together as a five-minute marker completes
+* all twelve blocks cascade off the bottom of the screen at the top of each hour
+
+## Additional Customization
+
+Watch face element colors can be customized, and (as mentioned above) "complication" slots can be filled with any of the available sources. (Currently options include temperature, temperature forecast, date, steps, etc.)
 
 ## Privacy Notes
 
@@ -45,7 +63,7 @@ Weather uses the phone's location permission and fetches current and forecast te
 
 ## Attribution
 
-Visitor is by Aenigma and was downloaded from DaFont. Confirm the final license terms before public release.
+The [Visitor](https://www.dafont.com/visitor.font) font is a Freeware font by Aenigma (Brian Kent) and was downloaded from DaFont.
 
 ## Assets
 
@@ -80,5 +98,4 @@ just screenshots
 - Choose the Faces category.
 - Add website, source, and support links if available.
 - Verify `private` visibility before publishing publicly.
-- Confirm Visitor font license is acceptable for app distribution.
 - Increment `version` in `package.json` for each released PBW.

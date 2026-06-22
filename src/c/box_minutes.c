@@ -25,7 +25,21 @@
 #define HOUR_COMPACT_PIXEL_SIZE 6
 #define HOUR_OVERLAY_PIXEL_SIZE 5
 #define HOUR_Y_OFFSET 0
-#elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_DIORITE)
+#elif defined(PBL_PLATFORM_GABBRO)
+// Pebble Round 2: round like chalk, but 260x260 vs 180x180 -- chalk's sizes
+// scaled ~1.44x. ACTIVE_MARKER_OFFSET 7 vs ACTIVE_MARKER_SIZE 10 keeps the four
+// active dots separated (4px gap).
+#define FUTURE_MARKER_SIZE 4
+#define ACTIVE_MARKER_SIZE 10
+#define COMPLETE_MARKER_SIZE 17
+#define FUTURE_MARKER_OFFSET 4
+#define ACTIVE_MARKER_OFFSET 7
+#define HOUR_PIXEL_SIZE 12
+#define HOUR_COMPACT_PIXEL_SIZE 9
+#define HOUR_OVERLAY_PIXEL_SIZE 7
+#define HOUR_Y_OFFSET 0
+#elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || \
+      defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT)
 #define FUTURE_MARKER_SIZE 2
 #define ACTIVE_MARKER_SIZE 6
 #define COMPLETE_MARKER_SIZE 10

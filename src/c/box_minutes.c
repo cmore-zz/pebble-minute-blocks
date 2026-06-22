@@ -255,28 +255,35 @@ static int ordered_dot_index(int progress_index) {
   return order[progress_index % DOT_COUNT];
 }
 
-static int32_t kinetic_milliseconds_until_minute(void) {
+// Single wall-clock read for the kinetic timing helpers. Any of the out-pointers
+// may be NULL. ms_until_minute and ms_after_minute are complementary within the
+// minute (ms_until = 60000 - ms_after). Returns false if the clock is unavailable.
+static bool kinetic_now(int *min, int32_t *ms_until_minute, int32_t *ms_after_minute) {
   time_t now;
   uint16_t milliseconds;
   time_ms(&now, &milliseconds);
   struct tm *time_now = localtime(&now);
   if (!time_now) {
-    return -1;
+    return false;
   }
 
-  return (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
+  int32_t after = time_now->tm_sec * 1000 + milliseconds;
+  if (min) {
+    *min = time_now->tm_min;
+  }
+  if (ms_after_minute) {
+    *ms_after_minute = after;
+  }
+  if (ms_until_minute) {
+    *ms_until_minute = 60000 - after;
+  }
+  return true;
 }
 
-static int32_t kinetic_milliseconds_after_minute(void) {
-  time_t now;
-  uint16_t milliseconds;
-  time_ms(&now, &milliseconds);
-  struct tm *time_now = localtime(&now);
-  if (!time_now) {
-    return -1;
-  }
-
-  return time_now->tm_sec * 1000 + milliseconds;
+// Length of the pre-boundary animation: the smash on a completing marker
+// (min % 5 == 4), otherwise the shorter falling-pixel window.
+static int32_t kinetic_run_up_ms(int min) {
+  return (min % 5 == 4) ? KINETIC_SMASH_DURATION_MS : KINETIC_FALL_WINDOW_MS;
 }
 
 static int16_t kinetic_lerp_int16(int16_t from, int16_t to, int32_t amount) {
@@ -308,12 +315,12 @@ static bool kinetic_draw_smashing_marker(GContext *ctx, GPoint marker_center, in
     return false;
   }
 
-  int32_t milliseconds_until_minute = kinetic_milliseconds_until_minute();
-  if (milliseconds_until_minute < 0 || milliseconds_until_minute > KINETIC_SMASH_DURATION_MS) {
+  int32_t ms_until_minute;
+  if (!kinetic_now(NULL, &ms_until_minute, NULL) || ms_until_minute > KINETIC_SMASH_DURATION_MS) {
     return false;
   }
 
-  int32_t elapsed = KINETIC_SMASH_DURATION_MS - milliseconds_until_minute;
+  int32_t elapsed = KINETIC_SMASH_DURATION_MS - ms_until_minute;
   int32_t amount = kinetic_smash_amount(elapsed);
   for (int i = 0; i < DOT_COUNT; i++) {
     GPoint start = marker_dot_for_index(marker_center, ordered_dot_index(i), ACTIVE_MARKER_OFFSET);
@@ -373,15 +380,11 @@ static bool kinetic_incoming_pixel_position(GPoint center, int16_t radius, GPoin
     return false;
   }
 
-  time_t now;
-  uint16_t milliseconds;
-  time_ms(&now, &milliseconds);
-  struct tm *time_now = localtime(&now);
-  if (!time_now) {
+  int32_t milliseconds_until_minute;
+  if (!kinetic_now(NULL, &milliseconds_until_minute, NULL)) {
     return false;
   }
 
-  int32_t milliseconds_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
   int16_t start_y = -ACTIVE_MARKER_SIZE;
   int16_t travel_distance = target.y - start_y;
   int32_t fall_duration = ((int32_t)travel_distance * 1000) / KINETIC_FALL_PIXELS_PER_SECOND;
@@ -408,8 +411,8 @@ static void draw_kinetic_completion_fragments(GContext *ctx, GPoint center, int1
     return;
   }
 
-  int32_t elapsed = kinetic_milliseconds_after_minute();
-  if (elapsed < 0 || elapsed > KINETIC_FRAGMENT_DURATION_MS) {
+  int32_t elapsed;
+  if (!kinetic_now(NULL, NULL, &elapsed) || elapsed > KINETIC_FRAGMENT_DURATION_MS) {
     return;
   }
 
@@ -445,8 +448,9 @@ static void draw_kinetic_top_hour_falling_blocks(GContext *ctx, GRect bounds,
     return;
   }
 
-  int32_t elapsed = kinetic_milliseconds_after_minute();
-  if (elapsed < 0 || elapsed > KINETIC_TOP_HOUR_FALL_MS + KINETIC_TOP_HOUR_STAGGER_MS) {
+  int32_t elapsed;
+  if (!kinetic_now(NULL, NULL, &elapsed) ||
+      elapsed > KINETIC_TOP_HOUR_FALL_MS + KINETIC_TOP_HOUR_STAGGER_MS) {
     return;
   }
 
@@ -1426,21 +1430,15 @@ static bool kinetic_should_run_frame_timer(void) {
     return false;
   }
 
-  time_t now;
-  uint16_t milliseconds;
-  time_ms(&now, &milliseconds);
-  struct tm *time_now = localtime(&now);
-  if (!time_now) {
+  int min;
+  int32_t ms_until_minute;
+  int32_t ms_after_minute;
+  if (!kinetic_now(&min, &ms_until_minute, &ms_after_minute)) {
     return false;
   }
 
-  int min = time_now->tm_min;
-  int32_t ms_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
-  int32_t ms_after_minute = time_now->tm_sec * 1000 + milliseconds;
-
-  // Run-up: smash on a completing marker (min % 5 == 4), otherwise the falling pixel.
-  int32_t run_up = (min % 5 == 4) ? KINETIC_SMASH_DURATION_MS : KINETIC_FALL_WINDOW_MS;
-  if (ms_until_minute <= run_up) {
+  // Run-up: smash or falling pixel before the boundary.
+  if (ms_until_minute <= kinetic_run_up_ms(min)) {
     return true;
   }
 
@@ -1498,17 +1496,13 @@ static void kinetic_schedule_arm_timer(void) {
     return;
   }
 
-  time_t now;
-  uint16_t milliseconds;
-  time_ms(&now, &milliseconds);
-  struct tm *time_now = localtime(&now);
-  if (!time_now) {
+  int min;
+  int32_t ms_until_minute;
+  if (!kinetic_now(&min, &ms_until_minute, NULL)) {
     return;
   }
 
-  int32_t ms_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
-  int32_t run_up = (time_now->tm_min % 5 == 4) ? KINETIC_SMASH_DURATION_MS : KINETIC_FALL_WINDOW_MS;
-  int32_t delay = ms_until_minute - run_up;
+  int32_t delay = ms_until_minute - kinetic_run_up_ms(min);
   if (delay > 0) {
     s_kinetic_arm_timer = app_timer_register(delay, kinetic_arm_timer_handler, NULL);
   }

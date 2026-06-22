@@ -1016,18 +1016,22 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     draw_marker(ctx, center, radius, i);
   }
   draw_seconds_overlay(ctx, center, radius);
+
+  graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
+  draw_pixel_hour(ctx, content_bounds, hour_mode);
+
   if (s_settings.kinetic_enabled) {
-    // draw_seconds_overlay leaves the fill color set to the background/ring color it
-    // last drew with; the kinetic blocks are ring-colored, so reset before drawing them
-    // (otherwise the falling block renders in the background color and is invisible).
+    // Draw the kinetic blocks on top of the hour digits: a block falling to a
+    // center-column marker travels straight through the digits, so drawing it
+    // underneath would hide it behind the "10". The smash and fragments sit at
+    // the ring edges and are unaffected by the order. Reset the fill to the ring
+    // color first (the hour draw left it on the hour color).
     graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
     draw_kinetic_incoming_pixel(ctx, center, radius);
     draw_kinetic_completion_fragments(ctx, center, radius);
     draw_kinetic_top_hour_falling_blocks(ctx, content_bounds, center, radius);
   }
 
-  graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
-  draw_pixel_hour(ctx, content_bounds, hour_mode);
   draw_round_center_complications(ctx, content_bounds);
   draw_center_complications(ctx, content_bounds, is_obstructed);
 }

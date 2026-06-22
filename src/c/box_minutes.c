@@ -38,6 +38,9 @@
 #define HOUR_COMPACT_PIXEL_SIZE 9
 #define HOUR_OVERLAY_PIXEL_SIZE 7
 #define HOUR_Y_OFFSET 0
+// Bigger blocks on a round screen reach the bezel at the diagonals; pull the
+// ring in further than the default 12px inset.
+#define RING_INSET 22
 #elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || \
       defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT)
 #define FUTURE_MARKER_SIZE 2
@@ -59,6 +62,12 @@
 #define HOUR_COMPACT_PIXEL_SIZE 7
 #define HOUR_OVERLAY_PIXEL_SIZE 6
 #define HOUR_Y_OFFSET 0
+#endif
+
+// Distance the marker ring is inset from the nearest screen edge. Platforms can
+// override above (e.g. gabbro pulls in further for its larger round blocks).
+#ifndef RING_INSET
+#define RING_INSET 12
 #endif
 
 #define SETTINGS_VERSION 2
@@ -1017,7 +1026,7 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
                        HourModeNormal;
   GPoint center = grect_center_point(&content_bounds);
   int16_t radius = (content_bounds.size.w < content_bounds.size.h ?
-                    content_bounds.size.w : content_bounds.size.h) / 2 - 12;
+                    content_bounds.size.w : content_bounds.size.h) / 2 - RING_INSET;
   if (is_obstructed && PBL_IF_ROUND_ELSE(false, complications_visible())) {
     radius -= 3;
   }

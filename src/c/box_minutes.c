@@ -130,6 +130,7 @@ enum {
   ConfigKeyComplicationBottomRight = 10016,
   ConfigKeyComplicationBottomLeft = 10017,
   ConfigKeySecondsVisibility = 10018,
+  ConfigKeyKineticEnabled = 10019,
 };
 
 enum {
@@ -152,6 +153,7 @@ enum {
   PersistKeyComplicationBottomRight,
   PersistKeyComplicationBottomLeft,
   PersistKeySecondsVisibility,
+  PersistKeyKineticEnabled,
 };
 
 enum {
@@ -174,6 +176,7 @@ typedef struct {
   bool weather_available;
   int complication_visibility;
   int seconds_visibility;
+  bool kinetic_enabled;
   int complications[COMPLICATION_SLOT_COUNT];
 } Settings;
 
@@ -185,10 +188,8 @@ static bool s_bluetooth_connected;
 static bool s_complications_revealed;
 static AppTimer *s_complication_reveal_timer;
 static AppTimer *s_light_poll_timer;
-#ifdef MINUTE_BLOCKS_KINETIC
 static AppTimer *s_kinetic_frame_timer;
 static AppTimer *s_kinetic_arm_timer;
-#endif
 static bool s_light_poll_active;
 static bool s_was_light_on;
 static Settings s_settings;
@@ -199,10 +200,8 @@ static GFont s_visitor_font_25;
 static void refresh_time(void);
 static void update_light_polling(void);
 static void update_tick_subscription(void);
-#ifdef MINUTE_BLOCKS_KINETIC
 static void kinetic_update_frame_timer(void);
 static void kinetic_schedule_arm_timer(void);
-#endif
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
   {0x7, 0x5, 0x5, 0x5, 0x7},
@@ -256,7 +255,6 @@ static int ordered_dot_index(int progress_index) {
   return order[progress_index % DOT_COUNT];
 }
 
-#ifdef MINUTE_BLOCKS_KINETIC
 static int32_t kinetic_milliseconds_until_minute(void) {
   time_t now;
   uint16_t milliseconds;
@@ -328,7 +326,6 @@ static bool kinetic_draw_smashing_marker(GContext *ctx, GPoint marker_center, in
 
   return true;
 }
-#endif
 
 static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker_index) {
   int minute = s_time.tm_min;
@@ -336,11 +333,10 @@ static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker
   int active_progress = minute % 5;
   GPoint marker_center = marker_center_for_index(center, radius, marker_index);
 
-#ifdef MINUTE_BLOCKS_KINETIC
-  if (kinetic_draw_smashing_marker(ctx, marker_center, marker_index)) {
+  if (s_settings.kinetic_enabled &&
+      kinetic_draw_smashing_marker(ctx, marker_center, marker_index)) {
     return;
   }
-#endif
 
   if (marker_index < completed_markers) {
     fill_centered_rect(ctx, marker_center, COMPLETE_MARKER_SIZE);
@@ -356,7 +352,6 @@ static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker
   }
 }
 
-#ifdef MINUTE_BLOCKS_KINETIC
 static bool kinetic_next_pixel_target(GPoint center, int16_t radius, GPoint *target) {
   int next_minute = (s_time.tm_min + 1) % 60;
   int next_active_progress = next_minute % 5;
@@ -471,7 +466,6 @@ static void draw_kinetic_top_hour_falling_blocks(GContext *ctx, GRect bounds,
     fill_centered_rect(ctx, GPoint(start.x, y), COMPLETE_MARKER_SIZE);
   }
 }
-#endif
 
 static void draw_pixel_digit(GContext *ctx, int digit, GPoint origin, int16_t pixel_size, int16_t gap) {
   for (int row = 0; row < PIXEL_ROWS; row++) {
@@ -1018,15 +1012,15 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
     draw_marker(ctx, center, radius, i);
   }
   draw_seconds_overlay(ctx, center, radius);
-#ifdef MINUTE_BLOCKS_KINETIC
-  // draw_seconds_overlay leaves the fill color set to the background/ring color it
-  // last drew with; the kinetic blocks are ring-colored, so reset before drawing them
-  // (otherwise the falling block renders in the background color and is invisible).
-  graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
-  draw_kinetic_incoming_pixel(ctx, center, radius);
-  draw_kinetic_completion_fragments(ctx, center, radius);
-  draw_kinetic_top_hour_falling_blocks(ctx, content_bounds, center, radius);
-#endif
+  if (s_settings.kinetic_enabled) {
+    // draw_seconds_overlay leaves the fill color set to the background/ring color it
+    // last drew with; the kinetic blocks are ring-colored, so reset before drawing them
+    // (otherwise the falling block renders in the background color and is invisible).
+    graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
+    draw_kinetic_incoming_pixel(ctx, center, radius);
+    draw_kinetic_completion_fragments(ctx, center, radius);
+    draw_kinetic_top_hour_falling_blocks(ctx, content_bounds, center, radius);
+  }
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
   draw_pixel_hour(ctx, content_bounds, hour_mode);
@@ -1058,6 +1052,7 @@ static void settings_set_defaults(void) {
     .weather_available = false,
     .complication_visibility = ComplicationVisibilityOnTap,
     .seconds_visibility = SecondsVisibilityOnTap,
+    .kinetic_enabled = false,
     .complications = {
       ComplicationDate,
       ComplicationWeather,
@@ -1113,6 +1108,8 @@ static void settings_load(void) {
       s_settings.seconds_visibility > SecondsVisibilityOnTap) {
     s_settings.seconds_visibility = SecondsVisibilityNever;
   }
+  s_settings.kinetic_enabled = persist_exists(PersistKeyKineticEnabled) &&
+                               persist_read_bool(PersistKeyKineticEnabled);
 
   int persist_keys[COMPLICATION_SLOT_COUNT] = {
     PersistKeyComplicationTopLeft,
@@ -1152,6 +1149,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyComplicationBottomRight, s_settings.complications[ComplicationSlotBottomRight]);
   persist_write_int(PersistKeyComplicationBottomLeft, s_settings.complications[ComplicationSlotBottomLeft]);
   persist_write_int(PersistKeySecondsVisibility, s_settings.seconds_visibility);
+  persist_write_bool(PersistKeyKineticEnabled, s_settings.kinetic_enabled);
 }
 
 static void request_weather(void) {
@@ -1188,6 +1186,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *complication_bottom_right = dict_find(iter, ConfigKeyComplicationBottomRight);
   Tuple *complication_bottom_left = dict_find(iter, ConfigKeyComplicationBottomLeft);
   Tuple *seconds_visibility = dict_find(iter, ConfigKeySecondsVisibility);
+  Tuple *kinetic_enabled = dict_find(iter, ConfigKeyKineticEnabled);
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -1246,6 +1245,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
       s_settings.seconds_visibility = visibility;
     }
   }
+  if (kinetic_enabled) {
+    s_settings.kinetic_enabled = kinetic_enabled->value->int32 != 0;
+  }
   if (complication_top_left) {
     int type = (int)complication_top_left->value->int32;
     if (valid_complication(type)) {
@@ -1300,10 +1302,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     }
   }
 
-#ifdef MINUTE_BLOCKS_KINETIC
   kinetic_update_frame_timer();
   kinetic_schedule_arm_timer();
-#endif
 }
 
 static void battery_handler(BatteryChargeState state) {
@@ -1411,19 +1411,21 @@ static void update_light_polling(void) {
 
 static void update_tick_subscription(void) {
   tick_timer_service_subscribe(seconds_visible() ? SECOND_UNIT : MINUTE_UNIT, tick_handler);
-#ifdef MINUTE_BLOCKS_KINETIC
   // Catch any window we are already inside, then arm a wake-up before the next one.
+  // Both self-gate on kinetic_enabled (and cancel their timers when it is off).
   kinetic_update_frame_timer();
   kinetic_schedule_arm_timer();
-#endif
 }
 
-#ifdef MINUTE_BLOCKS_KINETIC
 // Frames are only needed in brief windows around the minute boundary: the falling
 // pixel / smash in the run-up, and the completion fragments / top-of-hour cascade
 // just after. Outside those the face sleeps at minute (or second, when the seconds
 // sweep is on) granularity rather than waking 60x/min.
 static bool kinetic_should_run_frame_timer(void) {
+  if (!s_settings.kinetic_enabled) {
+    return false;
+  }
+
   time_t now;
   uint16_t milliseconds;
   time_ms(&now, &milliseconds);
@@ -1492,7 +1494,7 @@ static void kinetic_schedule_arm_timer(void) {
   }
 
   // With per-second ticks the frame timer is armed straight from tick_handler.
-  if (seconds_visible()) {
+  if (!s_settings.kinetic_enabled || seconds_visible()) {
     return;
   }
 
@@ -1513,7 +1515,6 @@ static void kinetic_schedule_arm_timer(void) {
   // delay <= 0 means we are already inside the run-up; kinetic_update_frame_timer
   // (called alongside this) starts the loop and the minute tick will reschedule.
 }
-#endif
 
 #if defined(PBL_TOUCH)
 static void touch_handler(const TouchEvent *event, void *context) {
@@ -1604,7 +1605,6 @@ static void deinit(void) {
     app_timer_cancel(s_light_poll_timer);
     s_light_poll_timer = NULL;
   }
-#ifdef MINUTE_BLOCKS_KINETIC
   if (s_kinetic_frame_timer) {
     app_timer_cancel(s_kinetic_frame_timer);
     s_kinetic_frame_timer = NULL;
@@ -1613,7 +1613,6 @@ static void deinit(void) {
     app_timer_cancel(s_kinetic_arm_timer);
     s_kinetic_arm_timer = NULL;
   }
-#endif
   app_message_deregister_callbacks();
   window_destroy(s_window);
   fonts_unload();

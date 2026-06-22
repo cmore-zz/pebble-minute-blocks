@@ -9,6 +9,7 @@ var DEFAULT_SETTINGS = {
   ComplicationSize: 0,
   ComplicationVisibility: 1,
   SecondsVisibility: 2,
+  KineticEnabled: 0,
   ComplicationTopLeft: 1,
   ComplicationTopRight: 2,
   ComplicationBottomRight: 4,
@@ -94,6 +95,7 @@ function cloneDefaults() {
     ComplicationSize: DEFAULT_SETTINGS.ComplicationSize,
     ComplicationVisibility: DEFAULT_SETTINGS.ComplicationVisibility,
     SecondsVisibility: DEFAULT_SETTINGS.SecondsVisibility,
+    KineticEnabled: DEFAULT_SETTINGS.KineticEnabled,
     ComplicationTopLeft: DEFAULT_SETTINGS.ComplicationTopLeft,
     ComplicationTopRight: DEFAULT_SETTINGS.ComplicationTopRight,
     ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
@@ -311,6 +313,7 @@ function buildConfigHtml(settings, isRound, isBw) {
       { value: 1, label: "Always" },
       { value: 2, label: "Tap to show" }
     ]),
+    "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
     selectField(isRound ? "Detail 1" : "Top left", "complicationTopLeft",
                 settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
     selectField(isRound ? "Detail 2" : "Top right", "complicationTopRight",
@@ -363,6 +366,7 @@ function buildConfigHtml(settings, isRound, isBw) {
     "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
     "ComplicationVisibility:parseInt(document.getElementById('complicationVisibility').value,10),",
     "SecondsVisibility:parseInt(document.getElementById('secondsVisibility').value,10),",
+    "KineticEnabled:document.getElementById('kineticEnabled').checked?1:0,",
     "ComplicationTopLeft:parseInt(document.getElementById('complicationTopLeft').value,10),",
     "ComplicationTopRight:parseInt(document.getElementById('complicationTopRight').value,10),",
     "ComplicationBottomRight:parseInt(document.getElementById('complicationBottomRight').value,10),",
@@ -412,6 +416,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationSize = Number(settings.ComplicationSize);
     settings.ComplicationVisibility = Number(settings.ComplicationVisibility);
     settings.SecondsVisibility = Number(settings.SecondsVisibility);
+    settings.KineticEnabled = settings.KineticEnabled ? 1 : 0;
     settings.ComplicationTopLeft = Number(settings.ComplicationTopLeft);
     settings.ComplicationTopRight = Number(settings.ComplicationTopRight);
     settings.ComplicationBottomRight = Number(settings.ComplicationBottomRight);

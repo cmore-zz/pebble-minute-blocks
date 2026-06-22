@@ -40,29 +40,6 @@ C compiler:
 pebble build
 ```
 
-## Variants
-
-Variant manifests live in `variants/`. They override the shared top-level
-`package.json` metadata while building from the same C, JavaScript, and resource
-files.
-
-The default watchface still builds normally:
-
-```sh
-just build
-```
-
-The Kinetic sibling build uses its own display name, UUID, and PBW output:
-
-```sh
-just build-kinetic
-```
-
-That writes `build/pebble-minute-blocks-kinetic.pbw`. Variant builds run from a
-temporary copy of the repo, so the real `package.json` is not modified. C code
-can use `#ifdef MINUTE_BLOCKS_KINETIC` for behavior that should only exist in
-the Kinetic build.
-
 ## Install
 
 For the Pebble Time / Time Steel emulator, use the compact `basalt` target:
@@ -83,14 +60,6 @@ For a physical watch through the Pebble/Rebble app developer connection:
 just install --phone PHONE_IP
 ```
 
-To install the Kinetic sibling build, use the same arguments with
-`install-kinetic`:
-
-```sh
-just install-kinetic --emulator emery
-just install-kinetic --phone PHONE_IP
-```
-
 ## Settings
 
 The Pebble app settings page supports:
@@ -105,6 +74,8 @@ The Pebble app settings page supports:
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until a tap/shake/backlight
 - subtle seconds sweep: never, always, or hidden until a tap/shake/backlight
+- kinetic animations: blocks fall in, smash together on completion, and cascade
+  at the top of the hour (off by default)
 - each corner complication: none, date, current temperature, forecast range,
   battery, Bluetooth, or steps
 - weather on/off

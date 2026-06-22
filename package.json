@@ -48,7 +48,8 @@
       "ComplicationTopRight",
       "ComplicationBottomRight",
       "ComplicationBottomLeft",
-      "SecondsVisibility"
+      "SecondsVisibility",
+      "KineticEnabled"
     ],
     "resources": {
       "media": [

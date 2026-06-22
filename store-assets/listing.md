@@ -47,7 +47,7 @@ shake, tap, or backlight, or stay always on.
 
 A "Kinetic" mode (off by default) adds playful motion to the blocks:
 * a new block falls into place as each minute ticks (minutes 1–4 of every five)
-* the four blocks pull apart and snap together as a five-minute marker completes
+* the four blocks stretch apart and then smash together as a five-minute marker completes
 * all twelve blocks cascade off the bottom of the screen at the top of each hour
 
 ## Additional Customization

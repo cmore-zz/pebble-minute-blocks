@@ -62,6 +62,7 @@
 #define KINETIC_FRAGMENT_DURATION_MS 900
 #define KINETIC_TOP_HOUR_FALL_MS 1300
 #define KINETIC_TOP_HOUR_STAGGER_MS 700
+#define KINETIC_FALL_WINDOW_MS 1000
 
 enum {
   TimeModeWatch = 0,
@@ -186,6 +187,7 @@ static AppTimer *s_complication_reveal_timer;
 static AppTimer *s_light_poll_timer;
 #ifdef MINUTE_BLOCKS_KINETIC
 static AppTimer *s_kinetic_frame_timer;
+static AppTimer *s_kinetic_arm_timer;
 #endif
 static bool s_light_poll_active;
 static bool s_was_light_on;
@@ -199,6 +201,7 @@ static void update_light_polling(void);
 static void update_tick_subscription(void);
 #ifdef MINUTE_BLOCKS_KINETIC
 static void kinetic_update_frame_timer(void);
+static void kinetic_schedule_arm_timer(void);
 #endif
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
@@ -1299,6 +1302,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
 #ifdef MINUTE_BLOCKS_KINETIC
   kinetic_update_frame_timer();
+  kinetic_schedule_arm_timer();
 #endif
 }
 
@@ -1406,32 +1410,47 @@ static void update_light_polling(void) {
 }
 
 static void update_tick_subscription(void) {
-#ifdef MINUTE_BLOCKS_KINETIC
-  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
-  kinetic_update_frame_timer();
-#else
   tick_timer_service_subscribe(seconds_visible() ? SECOND_UNIT : MINUTE_UNIT, tick_handler);
+#ifdef MINUTE_BLOCKS_KINETIC
+  // Catch any window we are already inside, then arm a wake-up before the next one.
+  kinetic_update_frame_timer();
+  kinetic_schedule_arm_timer();
 #endif
 }
 
 #ifdef MINUTE_BLOCKS_KINETIC
+// Frames are only needed in brief windows around the minute boundary: the falling
+// pixel / smash in the run-up, and the completion fragments / top-of-hour cascade
+// just after. Outside those the face sleeps at minute (or second, when the seconds
+// sweep is on) granularity rather than waking 60x/min.
 static bool kinetic_should_run_frame_timer(void) {
-  time_t now = time(NULL);
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
   struct tm *time_now = localtime(&now);
   if (!time_now) {
     return false;
   }
 
-  // The smash plays for KINETIC_SMASH_DURATION_MS (2.5s) before a marker completes,
-  // i.e. the final seconds of a min % 5 == 4 minute, so it needs frames before :59.
-  // Every minute also needs frames around the boundary for the falling pixel and
-  // completion fragments, plus the top-of-hour cascade just after :00.
-  bool smash_windup = time_now->tm_min % 5 == 4 &&
-                      (59 - time_now->tm_sec) * 1000 <= KINETIC_SMASH_DURATION_MS;
-  return smash_windup ||
-         time_now->tm_sec == 59 ||
-         time_now->tm_sec == 0 ||
-         (time_now->tm_min == 0 && time_now->tm_sec <= 2);
+  int min = time_now->tm_min;
+  int32_t ms_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
+  int32_t ms_after_minute = time_now->tm_sec * 1000 + milliseconds;
+
+  // Run-up: smash on a completing marker (min % 5 == 4), otherwise the falling pixel.
+  int32_t run_up = (min % 5 == 4) ? KINETIC_SMASH_DURATION_MS : KINETIC_FALL_WINDOW_MS;
+  if (ms_until_minute <= run_up) {
+    return true;
+  }
+
+  // Aftermath: fragment burst when a marker just completed, plus the longer cascade.
+  if (min % 5 == 0 && ms_after_minute <= KINETIC_FRAGMENT_DURATION_MS) {
+    return true;
+  }
+  if (min == 0 && ms_after_minute <= KINETIC_TOP_HOUR_FALL_MS + KINETIC_TOP_HOUR_STAGGER_MS) {
+    return true;
+  }
+
+  return false;
 }
 
 static void kinetic_frame_timer_handler(void *context) {
@@ -1454,6 +1473,45 @@ static void kinetic_update_frame_timer(void) {
     app_timer_cancel(s_kinetic_frame_timer);
     s_kinetic_frame_timer = NULL;
   }
+}
+
+static void kinetic_arm_timer_handler(void *context) {
+  (void)context;
+  s_kinetic_arm_timer = NULL;
+  // Reached the run-up window: start the frame loop. It self-sustains across the
+  // boundary (and through the aftermath), and the next minute tick reschedules us.
+  kinetic_update_frame_timer();
+}
+
+// When ticking at minute granularity, nothing would wake the CPU between :00 and the
+// pre-boundary run-up, so schedule a one-shot wake just before the next window starts.
+static void kinetic_schedule_arm_timer(void) {
+  if (s_kinetic_arm_timer) {
+    app_timer_cancel(s_kinetic_arm_timer);
+    s_kinetic_arm_timer = NULL;
+  }
+
+  // With per-second ticks the frame timer is armed straight from tick_handler.
+  if (seconds_visible()) {
+    return;
+  }
+
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
+  struct tm *time_now = localtime(&now);
+  if (!time_now) {
+    return;
+  }
+
+  int32_t ms_until_minute = (59 - time_now->tm_sec) * 1000 + (1000 - milliseconds);
+  int32_t run_up = (time_now->tm_min % 5 == 4) ? KINETIC_SMASH_DURATION_MS : KINETIC_FALL_WINDOW_MS;
+  int32_t delay = ms_until_minute - run_up;
+  if (delay > 0) {
+    s_kinetic_arm_timer = app_timer_register(delay, kinetic_arm_timer_handler, NULL);
+  }
+  // delay <= 0 means we are already inside the run-up; kinetic_update_frame_timer
+  // (called alongside this) starts the loop and the minute tick will reschedule.
 }
 #endif
 
@@ -1550,6 +1608,10 @@ static void deinit(void) {
   if (s_kinetic_frame_timer) {
     app_timer_cancel(s_kinetic_frame_timer);
     s_kinetic_frame_timer = NULL;
+  }
+  if (s_kinetic_arm_timer) {
+    app_timer_cancel(s_kinetic_arm_timer);
+    s_kinetic_arm_timer = NULL;
   }
 #endif
   app_message_deregister_callbacks();

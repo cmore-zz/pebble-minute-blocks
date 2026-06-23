@@ -26,7 +26,7 @@ The PBW currently targets `aplite`, `basalt`, `chalk`, `diorite`, `emery`, `flin
 
 ## Short Description
 
-A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and two center complications on round Pebble watches.
+A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and centered complications on round Pebble watches (two on Pebble Time Round, four on the larger Pebble Round 2).
 
 ## Description
 

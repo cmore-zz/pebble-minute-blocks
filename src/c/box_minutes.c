@@ -868,7 +868,9 @@ static bool complications_visible(void) {
 }
 
 static bool round_complications_visible(void) {
-  return s_settings.complication_visibility == ComplicationVisibilityOnTap && s_complications_revealed;
+  // Mirror the rectangular logic so "Always shown" works on round watches too,
+  // not just tap-to-reveal.
+  return complications_visible();
 }
 
 static bool seconds_visible(void) {

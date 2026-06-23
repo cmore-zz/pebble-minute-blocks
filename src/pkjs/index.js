@@ -257,7 +257,7 @@ function hiddenColorField(id, value) {
   return hiddenField(id, hexFromNumber(value));
 }
 
-function buildConfigHtml(settings, isRound, isBw) {
+function buildConfigHtml(settings, isRound, isBw, twoSlotRound) {
   var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
 
   return [
@@ -314,14 +314,14 @@ function buildConfigHtml(settings, isRound, isBw) {
       { value: 2, label: "Tap to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    selectField(isRound ? "Detail 1" : "Top left", "complicationTopLeft",
+    selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",
                 settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
-    selectField(isRound ? "Detail 2" : "Top right", "complicationTopRight",
+    selectField(twoSlotRound ? "Detail 2" : "Top right", "complicationTopRight",
                 settings.ComplicationTopRight, COMPLICATION_OPTIONS),
-    isRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
+    twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
       selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
                   COMPLICATION_OPTIONS),
-    isRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
+    twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
       selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
                   COMPLICATION_OPTIONS),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
@@ -396,9 +396,13 @@ Pebble.addEventListener("ready", function() {
 Pebble.addEventListener("showConfiguration", function() {
   var info = typeof Pebble.getActiveWatchInfo === "function" ? Pebble.getActiveWatchInfo() : {};
   var platform = info && info.platform ? info.platform : "";
-  var isBw = platform === "aplite" || platform === "diorite";
+  var isBw = platform === "aplite" || platform === "diorite" || platform === "flint";
+  // chalk and gabbro both render round (hide the size control, which round
+  // ignores); only chalk collapses to two center slots, gabbro keeps all four.
+  var isRound = platform === "chalk" || platform === "gabbro";
+  var twoSlotRound = platform === "chalk";
   Pebble.openURL("data:text/html," +
-                 encodeURIComponent(buildConfigHtml(loadSettings(), platform === "chalk", isBw)));
+                 encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound)));
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {

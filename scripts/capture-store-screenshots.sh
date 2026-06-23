@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/capture-store-screenshots.sh [--out DIR] [platform...]
 
-Platforms: basalt chalk emery aplite diorite
+Platforms: basalt chalk emery aplite diorite gabbro
 
 Examples:
   scripts/capture-store-screenshots.sh

@@ -80,10 +80,10 @@
 #define COMPLICATION_REVEAL_MS 7000
 #define LIGHT_POLL_MS 1000
 // Backlight-based reveal polls light_is_on() once a second whenever a tap-to-show
-// option is set, which is the only always-on CPU wake. Set to 1 to disable it and
-// rely solely on the (free, event-driven) accelerometer tap for reveal -- once
+// option is set, which is the only always-on CPU wake. Set to 0 to skip that poll
+// and rely solely on the (free, event-driven) accelerometer tap for reveal -- once
 // tap reveal is confirmed reliable on the target hardware (notably PT2).
-#define DISABLE_LIGHT_MONITORING 0
+#define ENABLE_LIGHT_MONITORING 1
 #define KINETIC_FRAME_MS 33
 #define KINETIC_FALL_PIXELS_PER_SECOND 220
 #define KINETIC_SMASH_DURATION_MS 1500
@@ -1497,11 +1497,11 @@ static void light_poll_timer_handler(void *context) {
 }
 
 static void update_light_polling(void) {
-#if DISABLE_LIGHT_MONITORING
-  bool should_poll = false;
-#else
+#if ENABLE_LIGHT_MONITORING
   bool should_poll = s_settings.complication_visibility == ComplicationVisibilityOnTap ||
                      s_settings.seconds_visibility == SecondsVisibilityOnTap;
+#else
+  bool should_poll = false;
 #endif
 
   if (should_poll && !s_light_poll_active) {

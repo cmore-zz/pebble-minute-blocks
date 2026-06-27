@@ -208,6 +208,7 @@ static Layer *s_canvas_layer;
 static struct tm s_time;
 static BatteryChargeState s_battery_state;
 static bool s_bluetooth_connected;
+static int s_steps = -1;
 static bool s_complications_revealed;
 static AppTimer *s_complication_reveal_timer;
 static AppTimer *s_light_poll_timer;
@@ -789,8 +790,24 @@ static int steps_today(void) {
   return -1;
 }
 
+static bool steps_complication_enabled(void) {
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    if (s_settings.complications[slot] == ComplicationSteps) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Querying Health is comparatively expensive, so cache the step count and only
+// refresh it once a minute (and only when a steps complication is configured)
+// rather than re-querying on every redraw / animation frame.
+static void refresh_steps(void) {
+  s_steps = steps_complication_enabled() ? steps_today() : -1;
+}
+
 static void format_steps(char *buffer, size_t size) {
-  int steps = steps_today();
+  int steps = s_steps;
 
   if (steps < 0) {
     snprintf(buffer, size, "--");
@@ -904,13 +921,6 @@ static void draw_seconds_overlay(GContext *ctx, GPoint center, int16_t radius) {
 }
 
 static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, bool tight) {
-  char date_label[8];
-  char date_number[4];
-  char battery_number[4];
-  char bluetooth_text[4];
-  char weather_number[8];
-  char forecast_text[12];
-  char steps_text[12];
   const char *weather_suffix = s_settings.weather_units == WeatherUnitsC ? "C" : "F";
   int16_t row_height = complication_row_height();
   int16_t box_height = type == ComplicationDate ? complication_box_height() : row_height;
@@ -924,21 +934,19 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, b
     return;
   }
 
-  strftime(date_label, sizeof(date_label), "%a", &s_time);
-  snprintf(date_number, sizeof(date_number), "%02d", s_time.tm_mday);
-  snprintf(battery_number, sizeof(battery_number), "%d", s_battery_state.charge_percent);
-  snprintf(bluetooth_text, sizeof(bluetooth_text), "%s", s_bluetooth_connected ? "BT" : "--");
-  snprintf(weather_number, sizeof(weather_number), "%d", s_settings.weather_available ? s_settings.weather_temp : 0);
-  snprintf(forecast_text, sizeof(forecast_text), "%d-%d",
-           s_settings.weather_low, s_settings.weather_high);
-  format_steps(steps_text, sizeof(steps_text));
-
   switch (type) {
-    case ComplicationDate:
+    case ComplicationDate: {
+      char date_label[8];
+      char date_number[4];
+      strftime(date_label, sizeof(date_label), "%a", &s_time);
+      snprintf(date_number, sizeof(date_number), "%02d", s_time.tm_mday);
       draw_stacked_text(ctx, date_label, date_number, rect, alignment);
       break;
+    }
     case ComplicationWeather:
       if (s_settings.weather_enabled && s_settings.weather_available) {
+        char weather_number[8];
+        snprintf(weather_number, sizeof(weather_number), "%d", s_settings.weather_temp);
         draw_aligned_number_with_suffix(ctx, weather_number, weather_suffix, rect, alignment);
       } else {
         draw_aligned_text(ctx, "--", rect, alignment);
@@ -946,20 +954,32 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, b
       break;
     case ComplicationForecast:
       if (s_settings.weather_enabled && s_settings.weather_available) {
+        char forecast_text[12];
+        snprintf(forecast_text, sizeof(forecast_text), "%d-%d",
+                 s_settings.weather_low, s_settings.weather_high);
         draw_aligned_number_with_suffix(ctx, forecast_text, weather_suffix, rect, alignment);
       } else {
         draw_aligned_text(ctx, "--", rect, alignment);
       }
       break;
-    case ComplicationBattery:
+    case ComplicationBattery: {
+      char battery_number[4];
+      snprintf(battery_number, sizeof(battery_number), "%d", s_battery_state.charge_percent);
       draw_aligned_number_with_suffix(ctx, battery_number, "%", rect, alignment);
       break;
-    case ComplicationBluetooth:
+    }
+    case ComplicationBluetooth: {
+      char bluetooth_text[4];
+      snprintf(bluetooth_text, sizeof(bluetooth_text), "%s", s_bluetooth_connected ? "BT" : "--");
       draw_aligned_text(ctx, bluetooth_text, rect, alignment);
       break;
-    case ComplicationSteps:
+    }
+    case ComplicationSteps: {
+      char steps_text[12];
+      format_steps(steps_text, sizeof(steps_text));
       draw_aligned_steps(ctx, steps_text, rect, alignment);
       break;
+    }
   }
 }
 
@@ -1352,6 +1372,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   }
 
   settings_save();
+  refresh_steps();
   update_light_polling();
   update_tick_subscription();
   if (s_canvas_layer) {
@@ -1374,9 +1395,11 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
       ((units_changed & SECOND_UNIT) && seconds_visible())) {
     layer_mark_dirty(s_canvas_layer);
 
-    if (((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0) &&
-        tick_time->tm_min % 30 == 0) {
-      request_weather();
+    if ((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0) {
+      refresh_steps();
+      if (tick_time->tm_min % 30 == 0) {
+        request_weather();
+      }
     }
   }
 
@@ -1623,6 +1646,7 @@ static void init(void) {
   refresh_time();
   s_battery_state = battery_state_service_peek();
   s_bluetooth_connected = bluetooth_connection_service_peek();
+  refresh_steps();
 
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);

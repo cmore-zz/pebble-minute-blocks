@@ -32,7 +32,7 @@ A blocky digital watchface with minute-by-minute geometry, pixel text, and confi
 
 Minute Blocks in its default configuration is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
 
-The complication text uses the Visitor bitmap font for a crisp low-resolution look that matches Pebble displays. Complications can stay visible or hide until you tap or shake the watch.
+The complication text uses the Visitor bitmap font for a crisp low-resolution look that matches Pebble displays. Complications can stay visible or hide until you shake the watch.
 
 Weather uses the phone's location permission and fetches current and forecast temperatures from Open-Meteo. No API key is required.
 
@@ -43,7 +43,7 @@ Two optional extras can be switched on in settings (both off by default): a subt
 Both features below are optional — enable them in the Pebble app settings.
 
 A subtle seconds indicator can sweep the ring: set it to never show, reveal on a
-tap or shake, or stay always on.
+wrist shake, or stay always on.
 
 A "Kinetic" mode (off by default) adds playful motion to the blocks:
 * a new block falls into place as each minute ticks (minutes 1–4 of every five)

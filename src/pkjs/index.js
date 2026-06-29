@@ -306,12 +306,12 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound) {
       ]),
     selectField("Complication visibility", "complicationVisibility", settings.ComplicationVisibility, [
       { value: 0, label: "Always shown" },
-      { value: 1, label: "Tap to show" }
+      { value: 1, label: "Shake to show" }
     ]),
     selectField("Seconds", "secondsVisibility", settings.SecondsVisibility, [
       { value: 0, label: "Never" },
       { value: 1, label: "Always" },
-      { value: 2, label: "Tap to show" }
+      { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
     selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",

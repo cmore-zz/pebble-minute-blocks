@@ -24,6 +24,23 @@ The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
 status labels and numbers stay crisp on low-resolution Pebble screens.
 
+## Animations
+
+Optional "Kinetic" mode (off by default — enable it in settings) adds motion to
+the ring:
+
+![A minute block falling into place](store-assets/animations/falling-block.gif)
+
+Each minute, a new block falls into place on the active marker.
+
+![The marker smashing shut and the top-of-hour cascade](store-assets/animations/smash-and-cascade.gif)
+
+When a five-minute marker completes the four blocks stretch apart and smash
+together, and at the top of each hour every block cascades off the bottom.
+
+*(Captured on the emulator at ~10 fps; the animations run smoothly at 30 fps on
+real hardware.)*
+
 ## Build
 
 The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`

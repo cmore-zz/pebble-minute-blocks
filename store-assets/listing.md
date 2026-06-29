@@ -7,9 +7,9 @@
 - Category: Faces
 - Type: Watchface
 - Version: 1.0.0
-- Website URL:
-- Source code URL:
-- Support email:
+- Website URL: https://github.com/cmore-zz/pebble-minute-blocks
+- Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
+- Support email: pebble@cmore.org
 
 ## Platforms
 
@@ -30,7 +30,7 @@ A blocky digital watchface with minute-by-minute geometry, pixel text, and confi
 
 ## Description
 
-Minute Blocks in its default configuration is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
+Minute Blocks in its default configuration is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, surrounded by a ring of dots and blocks, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
 
 The complication text uses the Visitor bitmap font for a crisp low-resolution look that matches Pebble displays. Complications can stay visible or hide until you shake the watch.
 
@@ -43,17 +43,21 @@ Two optional extras can be switched on in settings (both off by default): a subt
 Both features below are optional — enable them in the Pebble app settings.
 
 A subtle seconds indicator can sweep the ring: set it to never show, reveal on a
-wrist shake, or stay always on.
+wrist shake, or stay always on (always on affects battery life).
 
 A "Kinetic" mode (off by default) adds playful motion to the blocks:
 * a new block falls into place as each minute ticks (minutes 1–4 of every five)
 * the four blocks stretch apart and then smash together as a five-minute marker completes
 * all twelve blocks cascade off the bottom of the screen at the top of each hour
 
+![A minute block falling into place](animations/falling-block.gif)
+
+![The marker smashing shut and the top-of-hour cascade](animations/smash-and-cascade.gif)
+
 The animations run in short bursts rather than as a constant draw, so they stay
 light on battery: with Kinetic on and seconds off, Battery+ estimated roughly two
 weeks on a Pebble Time 2 (an estimate that varies by watch and use). Always-on
-seconds is the heavier option.
+seconds has a greater effect on battery life.
 
 ## Additional Customization
 

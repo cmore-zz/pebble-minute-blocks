@@ -73,8 +73,8 @@ The Pebble app settings page supports:
   complications
 - time mode: watch setting, 12-hour, or 24-hour
 - complication size: normal, medium, or large
-- complication visibility: always shown, or hidden until a tap/shake/backlight
-- subtle seconds sweep: never, always, or hidden until a tap/shake/backlight
+- complication visibility: always shown, or hidden until you tap or shake the watch
+- subtle seconds sweep: never, always, or hidden until you tap or shake the watch
 - kinetic animations: blocks fall in, smash together on completion, and cascade
   at the top of the hour (off by default)
 - each corner complication: none, date, current temperature, forecast range,
@@ -85,6 +85,15 @@ The Pebble app settings page supports:
 Weather uses PebbleKit JS on the phone with location permission and Open-Meteo.
 It refreshes current temperature and the day's forecast range on startup and
 every 30 minutes.
+
+## Battery
+
+At rest the face only updates once a minute, and reveal is event-driven (a tap or
+shake), so there's no constant polling. The kinetic animations are short bursts —
+roughly 2% of the time — rather than a continuous draw. With animations on and
+seconds off, Battery+ estimated about two weeks on a Pebble Time 2; this is an
+estimate that varies by watch and use. Always-on seconds is the one option that
+shortens runtime noticeably, since it redraws every second.
 
 ## Store Assets
 

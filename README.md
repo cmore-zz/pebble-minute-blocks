@@ -29,11 +29,11 @@ status labels and numbers stay crisp on low-resolution Pebble screens.
 Optional "Kinetic" mode (off by default — enable it in settings) adds motion to
 the ring:
 
-![A minute block falling into place](store-assets/animations/falling-block.gif)
+<img src="store-assets/animations/falling-block.gif" width="288" alt="A minute block falling into place">
 
 Each minute, a new block falls into place on the active marker.
 
-![The marker smashing shut and the top-of-hour cascade](store-assets/animations/smash-and-cascade.gif)
+<img src="store-assets/animations/smash-and-cascade.gif" width="288" alt="The marker smashing shut and the top-of-hour cascade">
 
 When a five-minute marker completes the four blocks stretch apart and smash
 together, and at the top of each hour every block cascades off the bottom.

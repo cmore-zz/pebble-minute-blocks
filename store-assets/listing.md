@@ -28,6 +28,8 @@ The PBW currently targets `aplite`, `basalt`, `chalk`, `diorite`, `emery`, `flin
 
 A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and centered complications on round Pebble watches (two on Pebble Time Round, four on the larger Pebble Round 2).
 
+Also includes optional retro-style animations every minute (blocks fall into place, smash together, then fall away at top of the hour).
+
 ## Description
 
 **Tell time in blocks: chunky pixel digits for the hour, ringed by twelve markers that fill in block by block as the minutes pass.**
@@ -50,9 +52,9 @@ A "Kinetic" mode (off by default) adds playful motion to the blocks:
 * the four blocks stretch apart and then smash together as a five-minute marker completes
 * all twelve blocks cascade off the bottom of the screen at the top of each hour
 
-![A minute block falling into place](animations/falling-block.gif)
+<img src="animations/falling-block.gif" width="288" alt="A minute block falling into place">
 
-![The marker smashing shut and the top-of-hour cascade](animations/smash-and-cascade.gif)
+<img src="animations/smash-and-cascade.gif" width="288" alt="The marker smashing shut and the top-of-hour cascade">
 
 The animations run in short bursts rather than as a constant draw, so they stay
 light on battery: with Kinetic on and seconds off, Battery+ estimated roughly two
@@ -85,7 +87,7 @@ The [Visitor](https://www.dafont.com/visitor.font) font is a Freeware font by Ae
 | Pebble Time Round (`chalk`) | [`chalk-normal.png`](screenshots/chalk-normal.png) | [`chalk-active.png`](screenshots/chalk-active.png) | - | - |
 | Pebble Round 2 (`gabbro`) | [`gabbro-normal.png`](screenshots/gabbro-normal.png) | [`gabbro-active.png`](screenshots/gabbro-active.png) | - | - |
 | Pebble 2 SE (`diorite`) | [`diorite-normal.png`](screenshots/diorite-normal.png) | [`diorite-active.png`](screenshots/diorite-active.png) | [`diorite-overlay.png`](screenshots/diorite-overlay.png) | [`diorite-overlay-active.png`](screenshots/diorite-overlay-active.png) |
-| Pebble 2 Duo (`flint`, same render as `diorite`) | [`diorite-normal.png`](screenshots/diorite-normal.png) | [`diorite-active.png`](screenshots/diorite-active.png) | [`diorite-overlay.png`](screenshots/diorite-overlay.png) | [`diorite-overlay-active.png`](screenshots/diorite-overlay-active.png) |
+| Pebble 2 Duo (`flint`) | [`flint-normal.png`](screenshots/flint-normal.png) | [`flint-active.png`](screenshots/flint-active.png) | [`flint-overlay.png`](screenshots/flint-overlay.png) | [`flint-overlay-active.png`](screenshots/flint-overlay-active.png) |
 | Pebble Time 2 (`emery`) | [`emery-normal.png`](screenshots/emery-normal.png) | [`emery-active.png`](screenshots/emery-active.png) | [`emery-overlay.png`](screenshots/emery-overlay.png) | [`emery-overlay-active.png`](screenshots/emery-overlay-active.png) |
 
 Regenerate screenshots with:
@@ -95,10 +97,12 @@ just screenshots
 ```
 
 The store accepts up to 5 screenshots per platform and supports **animated
-GIFs** — real listings use them, so lead with one of the animation clips below
-on the color platforms (basalt, chalk, emery, gabbro) to show the motion.
+GIFs**, but each must match the platform's native resolution. The clips below
+are 144×168, so they upload to the **basalt** collection. To show the animation
+on another platform, recapture it there at that platform's size:
+`scripts/capture-animation.py --scale 1 --emulator <platform> ...` (then trim).
 
-### Animation clips (usable as screenshots)
+### Animation clips (basalt, 144×168)
 
 - [`animations/falling-block.gif`](animations/falling-block.gif) — a minute block falling into place
 - [`animations/smash-and-cascade.gif`](animations/smash-and-cascade.gif) — marker smash + top-of-hour cascade

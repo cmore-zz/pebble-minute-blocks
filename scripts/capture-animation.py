@@ -25,7 +25,10 @@ Gotchas (learned the hard way):
     For listing-quality smoothness, record real hardware instead.
   * PT2 (emery) and Round 2 (gabbro) emulators won't accept a clock-set, so this
     only works on basalt/chalk/aplite/diorite.
-  * If the emulator wedges (captures go static / one distinct frame), `pebble
+  * Right after `pebble install` the emulator is extra slow to warm up, so the
+    first capture often comes out static or partial -- just run it again (two or
+    three tries usually catches it).
+  * If captures stay static after retrying, the emulator has wedged: `pebble
     wipe` and reinstall, then retry.
   * This writes full (un-optimized) frames on purpose. Do NOT post-process with
     `magick -layers optimize` -- its frame differencing leaves a pixel trail of

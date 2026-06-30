@@ -157,7 +157,10 @@ Notes (see the script's docstring for more):
   smooth clips.
 - Only basalt/chalk/aplite/diorite take a clock-set — PT2 (`emery`) and Round 2
   (`gabbro`) emulators don't.
-- If captures go static, the emulator has wedged: `pebble wipe`, reinstall, retry.
+- Right after install the emulator is pokey, so the first capture often comes
+  out static or partial — just run it again (two or three tries usually works).
+- If captures stay static after retrying, the emulator has wedged: `pebble
+  wipe`, reinstall, retry.
 - Don't post-process with `magick -layers optimize` — it leaves a pixel trail of
   the block's old positions. Use `-coalesce` if you must re-encode, and rebuild
   from the relevant frames to trim a clip to just the motion.

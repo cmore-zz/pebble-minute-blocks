@@ -105,10 +105,10 @@ on the color platforms (basalt, chalk, emery, gabbro) to show the motion.
 
 ### Marketing banner
 
-The publishing portal lists a marketing banner as a required upload (historical
-spec: **720×320 px**). Not yet created — generate one before publishing (a wide
-crop of the face on a color platform works). Confirm the exact requirement/size
-against the template on the portal's Appstore Assets page.
+[`marketing-banner.png`](marketing-banner.png) — a 720×320 first draft (title in
+the Visitor pixel font over the basalt + chalk screenshots on black). The portal
+lists a banner as a required upload. Refine or replace it as you like, and
+confirm the exact size against the template on the portal's Appstore Assets page.
 
 ### Icons
 
@@ -122,7 +122,7 @@ against the template on the portal's Appstore Assets page.
 - Upload `build/pebble-minute-blocks.pbw`.
 - Upload at least one screenshot per supported platform collection (up to 5 each).
 - Lead with an animation GIF (`animations/`) as a screenshot on the color platforms.
-- Create and upload a marketing banner (720×320; confirm requirement on the portal).
+- Refine and upload the marketing banner (`marketing-banner.png`, 720×320).
 - Upload large and small listing icons.
 - Keep the description field short — the bold pitch plus one paragraph.
 - Add website, source, and support links if available.

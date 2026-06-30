@@ -135,6 +135,33 @@ Regenerate the screenshot set with:
 just screenshots
 ```
 
+### Animations
+
+The kinetic demo GIFs in `store-assets/animations/` are captured from an emulator
+with `scripts/capture-animation.py`, which jumps the clock to an animation's
+trigger, enables Kinetic mode, burst-grabs frames, and writes a looping GIF. Run
+it with the SDK's Python:
+
+```sh
+PEBBLE_PYTHON=~/.local/share/uv/tools/pebble-tool/bin/python3
+$PEBBLE_PYTHON scripts/capture-animation.py --at 10:44:57 --duration 3.5 --out /tmp/smash.gif
+```
+
+Trigger windows: falling block `--at 10:25:56 --duration 5.0`; smash
+`--at 10:44:57 --duration 3.5`; top-of-hour smash+cascade
+`--at 11:59:57 --duration 4.5`.
+
+Notes (see the script's docstring for more):
+- The emulator renders kinetic at only ~10 fps, so the sub-second falling block
+  is choppy; the smash/cascade are long enough to read. Record real hardware for
+  smooth clips.
+- Only basalt/chalk/aplite/diorite take a clock-set — PT2 (`emery`) and Round 2
+  (`gabbro`) emulators don't.
+- If captures go static, the emulator has wedged: `pebble wipe`, reinstall, retry.
+- Don't post-process with `magick -layers optimize` — it leaves a pixel trail of
+  the block's old positions. Use `-coalesce` if you must re-encode, and rebuild
+  from the relevant frames to trim a clip to just the motion.
+
 ## Minute Ring
 
 - Future five-minute blocks: four small dots.

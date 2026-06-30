@@ -4,8 +4,8 @@ set -euo pipefail
 OUT_DIR="store-assets/screenshots"
 PBW="build/pebble-minute-blocks.pbw"
 PEBBLE_PYTHON="${PEBBLE_PYTHON:-/Users/cmore/.local/share/uv/tools/pebble-tool/bin/python3}"
-PLATFORMS=(basalt chalk emery aplite diorite gabbro)
-OVERLAY_PLATFORMS=(basalt emery aplite diorite)
+PLATFORMS=(basalt chalk emery aplite diorite flint gabbro)
+OVERLAY_PLATFORMS=(basalt emery aplite diorite flint)
 RETRIES="${RETRIES:-3}"
 RETRY_SLEEP="${RETRY_SLEEP:-3}"
 SCREENSHOT_TIME="${SCREENSHOT_TIME:-10:11:00}"
@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/capture-store-screenshots.sh [--out DIR] [platform...]
 
-Platforms: basalt chalk emery aplite diorite gabbro
+Platforms: basalt chalk emery aplite diorite flint gabbro
 
 Examples:
   scripts/capture-store-screenshots.sh
@@ -59,7 +59,7 @@ if ((${#SELECTED_PLATFORMS[@]})); then
   OVERLAY_PLATFORMS=()
   for platform in "${PLATFORMS[@]}"; do
     case "$platform" in
-      basalt|emery|aplite|diorite)
+      basalt|emery|aplite|diorite|flint)
         OVERLAY_PLATFORMS+=("$platform")
         ;;
       chalk|gabbro)

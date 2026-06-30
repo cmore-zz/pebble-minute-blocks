@@ -139,13 +139,17 @@ just screenshots
 
 The kinetic demo GIFs in `store-assets/animations/` are captured from an emulator
 with `scripts/capture-animation.py`, which jumps the clock to an animation's
-trigger, enables Kinetic mode, burst-grabs frames, and writes a looping GIF. Run
-it with the SDK's Python:
+trigger, enables Kinetic mode, burst-grabs frames, and writes a looping GIF.
+Install the build on the emulator first, then capture (`--scale 1` for native
+144×168, store-ready size):
 
 ```sh
-PEBBLE_PYTHON=~/.local/share/uv/tools/pebble-tool/bin/python3
-$PEBBLE_PYTHON scripts/capture-animation.py --at 10:44:57 --duration 3.5 --out /tmp/smash.gif
+just install --emulator basalt
+just capture-animation --scale 1 --at 10:44:57 --duration 3.5 --out /tmp/smash.gif
 ```
+
+(`just capture-animation` runs the script with the SDK's Python; override with
+the `PEBBLE_PYTHON` env var if your SDK lives elsewhere.)
 
 Trigger windows: falling block `--at 10:25:56 --duration 5.0`; smash
 `--at 10:44:57 --duration 3.5`; top-of-hour smash+cascade

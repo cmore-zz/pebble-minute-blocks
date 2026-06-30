@@ -100,7 +100,7 @@ The store accepts up to 5 screenshots per platform and supports **animated
 GIFs**, but each must match the platform's native resolution. The clips below
 are 144×168, so they upload to the **basalt** collection. To show the animation
 on another platform, recapture it there at that platform's size:
-`scripts/capture-animation.py --scale 1 --emulator <platform> ...` (then trim).
+`just capture-animation --scale 1 --emulator <platform> ...` (then trim).
 
 ### Animation clips (basalt, 144×168)
 

@@ -30,13 +30,13 @@ A blocky digital watchface with minute-by-minute geometry, pixel text, and confi
 
 ## Description
 
-Minute Blocks in its default configuration is a quiet digital watchface built around a custom block-number display. The center time uses a grid of square cells, surrounded by a ring of dots and blocks, while configurable corner complications can show date, battery, Bluetooth status, current temperature, forecast range, or steps.
+**Tell time in blocks: chunky pixel digits for the hour, ringed by twelve markers that fill in block by block as the minutes pass.**
 
-The complication text uses the Visitor bitmap font for a crisp low-resolution look that matches Pebble displays. Complications can stay visible or hide until you shake the watch.
+Configurable corner complications show date, weather, battery, Bluetooth, or steps (centered on round watches). They stay visible or hide until you shake the watch, and every element's color is customizable. Weather comes from Open-Meteo via the phone's location — no API key needed.
 
-Weather uses the phone's location permission and fetches current and forecast temperatures from Open-Meteo. No API key is required.
+Two optional extras, both off by default: a subtle seconds sweep, and a "Kinetic" mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
 
-Two optional extras can be switched on in settings (both off by default): a subtle seconds indicator that sweeps the ring, and a "Kinetic" mode that animates the blocks falling, smashing together, and cascading away at the top of the hour.
+*Appstore note: real listings are short and visual — the bold line plus the first paragraph is enough for the description field. Everything below is reference detail.*
 
 ## Animations
 
@@ -94,6 +94,22 @@ Regenerate screenshots with:
 just screenshots
 ```
 
+The store accepts up to 5 screenshots per platform and supports **animated
+GIFs** — real listings use them, so lead with one of the animation clips below
+on the color platforms (basalt, chalk, emery, gabbro) to show the motion.
+
+### Animation clips (usable as screenshots)
+
+- [`animations/falling-block.gif`](animations/falling-block.gif) — a minute block falling into place
+- [`animations/smash-and-cascade.gif`](animations/smash-and-cascade.gif) — marker smash + top-of-hour cascade
+
+### Marketing banner
+
+The publishing portal lists a marketing banner as a required upload (historical
+spec: **720×320 px**). Not yet created — generate one before publishing (a wide
+crop of the face on a color platform works). Confirm the exact requirement/size
+against the template on the portal's Appstore Assets page.
+
 ### Icons
 
 - Icon source crop: `store-assets/icons/minute-blocks-icon-source.png`
@@ -104,9 +120,11 @@ just screenshots
 ## Publish Checklist
 
 - Upload `build/pebble-minute-blocks.pbw`.
-- Upload at least one screenshot per supported platform collection.
+- Upload at least one screenshot per supported platform collection (up to 5 each).
+- Lead with an animation GIF (`animations/`) as a screenshot on the color platforms.
+- Create and upload a marketing banner (720×320; confirm requirement on the portal).
 - Upload large and small listing icons.
-- Choose the Faces category.
+- Keep the description field short — the bold pitch plus one paragraph.
 - Add website, source, and support links if available.
 - Verify `private` visibility before publishing publicly.
 - Increment `version` in `package.json` for each released PBW.

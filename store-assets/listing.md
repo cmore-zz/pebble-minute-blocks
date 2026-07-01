@@ -42,7 +42,11 @@ Two optional extras, both off by default: a subtle seconds sweep, and a "Kinetic
 
 ## Animations
 
-Both features below are optional — enable them in the Pebble app settings.
+On launch the face assembles itself: the hour and the minute ring sweep into
+place clockwise, then the ring settles with a small pulse. This plays every time
+the watchface loads, on any configuration.
+
+The two features below are optional — enable them in the Pebble app settings.
 
 A subtle seconds indicator can sweep the ring: set it to never show, reveal on a
 wrist shake, or stay always on (always on affects battery life).

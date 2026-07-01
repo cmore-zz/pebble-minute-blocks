@@ -91,6 +91,24 @@
 #define KINETIC_TOP_HOUR_FALL_MS 1300
 #define KINETIC_TOP_HOUR_STAGGER_MS 700
 #define KINETIC_FALL_WINDOW_MS 1000
+#define INTRO_FRAME_MS 33
+#define INTRO_LEAD_MS 325
+#define INTRO_DURATION_MS 1700
+#define INTRO_HOUR_DURATION_MS 560
+#define INTRO_HOUR_SWEEP_MS 280
+#define INTRO_HOUR_PIECE_MS 200
+#define INTRO_RING_START_MS 300
+#define INTRO_MARKER_STAGGER_MS 42
+#define INTRO_MARKER_DURATION_MS 240
+// The whole ring pulses outward and back once it has fully landed.
+#define INTRO_RING_LANDED_MS (INTRO_RING_START_MS + \
+                              (MARKER_COUNT - 1) * INTRO_MARKER_STAGGER_MS + \
+                              INTRO_MARKER_DURATION_MS)
+#define INTRO_PULSE_MS 260
+#define INTRO_PULSE_AMPLITUDE 4
+// A settle/charge beat after the ring lands, before it pulses (must be at least
+// ~1 frame / 33ms to register).
+#define INTRO_PULSE_DELAY_MS 100
 
 enum {
   TimeModeWatch = 0,
@@ -219,8 +237,13 @@ static AppTimer *s_complication_reveal_timer;
 static AppTimer *s_light_poll_timer;
 static AppTimer *s_kinetic_frame_timer;
 static AppTimer *s_kinetic_arm_timer;
+static AppTimer *s_intro_frame_timer;
 static bool s_light_poll_active;
 static bool s_was_light_on;
+static bool s_intro_active;
+static bool s_intro_started;
+static time_t s_intro_start_time;
+static uint16_t s_intro_start_ms;
 static Settings s_settings;
 static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
@@ -231,6 +254,7 @@ static void update_light_polling(void);
 static void update_tick_subscription(void);
 static void kinetic_update_frame_timer(void);
 static void kinetic_schedule_arm_timer(void);
+static void intro_update_frame_timer(void);
 
 static const uint8_t DIGITS[10][PIXEL_ROWS] = {
   {0x7, 0x5, 0x5, 0x5, 0x7},
@@ -319,6 +343,44 @@ static int16_t kinetic_lerp_int16(int16_t from, int16_t to, int32_t amount) {
   return from + ((to - from) * amount) / 1000;
 }
 
+static int32_t clamp_progress(int32_t elapsed, int32_t duration) {
+  if (elapsed <= 0) {
+    return 0;
+  }
+  if (elapsed >= duration) {
+    return 1000;
+  }
+  return (elapsed * 1000) / duration;
+}
+
+static int32_t ease_out_progress(int32_t progress) {
+  int32_t inverse = 1000 - progress;
+  return 1000 - (inverse * inverse) / 1000;
+}
+
+static bool intro_elapsed_ms(int32_t *elapsed) {
+  if (!s_intro_active) {
+    return false;
+  }
+
+  if (!s_intro_started) {
+    time_ms(&s_intro_start_time, &s_intro_start_ms);
+    s_intro_started = true;
+    *elapsed = 0;
+    return true;
+  }
+
+  time_t now;
+  uint16_t milliseconds;
+  time_ms(&now, &milliseconds);
+  *elapsed = (int32_t)(now - s_intro_start_time) * 1000 +
+             (int32_t)milliseconds - (int32_t)s_intro_start_ms;
+  if (*elapsed < 0) {
+    *elapsed = 0;
+  }
+  return true;
+}
+
 static int32_t kinetic_smash_amount(int32_t elapsed) {
   // Choreography over KINETIC_SMASH_DURATION_MS (1500ms). amount is a lerp factor
   // toward the center: 0 = dots spread out, 1000 = collapsed onto the block,
@@ -363,16 +425,11 @@ static bool kinetic_draw_smashing_marker(GContext *ctx, GPoint marker_center, in
   return true;
 }
 
-static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker_index) {
+static void draw_marker_at_rest(GContext *ctx, GPoint center, int16_t radius, int marker_index) {
   int minute = s_time.tm_min;
   int completed_markers = minute / 5;
   int active_progress = minute % 5;
   GPoint marker_center = marker_center_for_index(center, radius, marker_index);
-
-  if (s_settings.kinetic_enabled &&
-      kinetic_draw_smashing_marker(ctx, marker_center, marker_index)) {
-    return;
-  }
 
   if (marker_index < completed_markers) {
     fill_centered_rect(ctx, marker_center, COMPLETE_MARKER_SIZE);
@@ -385,6 +442,72 @@ static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker
     int16_t offset = is_active_pixel ? ACTIVE_MARKER_OFFSET : FUTURE_MARKER_OFFSET;
     GPoint dot = marker_dot_for_index(marker_center, ordered_dot_index(i), offset);
     draw_marker_pixel(ctx, dot, is_active_pixel ? ACTIVE_MARKER_SIZE : FUTURE_MARKER_SIZE);
+  }
+}
+
+static void draw_marker(GContext *ctx, GPoint center, int16_t radius, int marker_index) {
+  GPoint marker_center = marker_center_for_index(center, radius, marker_index);
+  if (s_settings.kinetic_enabled &&
+      kinetic_draw_smashing_marker(ctx, marker_center, marker_index)) {
+    return;
+  }
+
+  draw_marker_at_rest(ctx, center, radius, marker_index);
+}
+
+static void draw_intro_marker_piece(GContext *ctx, GPoint origin, GPoint target,
+                                    int16_t size, int32_t progress) {
+  int32_t eased = ease_out_progress(progress);
+  GPoint position = GPoint(
+    kinetic_lerp_int16(origin.x, target.x, eased),
+    kinetic_lerp_int16(origin.y, target.y, eased)
+  );
+  draw_marker_pixel(ctx, position, size);
+}
+
+// Outward-and-back radial offset for the whole ring once it has landed: 0 ->
+// INTRO_PULSE_AMPLITUDE -> 0 over INTRO_PULSE_MS (a half-sine bump).
+static int16_t intro_ring_pulse_delta(int32_t intro_elapsed) {
+  int32_t t = intro_elapsed - INTRO_RING_LANDED_MS - INTRO_PULSE_DELAY_MS;
+  if (t <= 0 || t >= INTRO_PULSE_MS) {
+    return 0;
+  }
+  int32_t angle = (t * (TRIG_MAX_ANGLE / 2)) / INTRO_PULSE_MS;
+  return (int16_t)((INTRO_PULSE_AMPLITUDE * sin_lookup(angle)) / TRIG_MAX_RATIO);
+}
+
+static void draw_intro_marker(GContext *ctx, GPoint center, int16_t radius,
+                              int marker_index, int32_t intro_elapsed) {
+  int32_t marker_elapsed = intro_elapsed - INTRO_RING_START_MS -
+                           marker_index * INTRO_MARKER_STAGGER_MS;
+  if (marker_elapsed <= 0) {
+    return;
+  }
+  if (marker_elapsed >= INTRO_MARKER_DURATION_MS) {
+    // Landed: apply the ring-wide pulse (0 until every marker is down).
+    draw_marker_at_rest(ctx, center, radius + intro_ring_pulse_delta(intro_elapsed),
+                        marker_index);
+    return;
+  }
+
+  int32_t progress = clamp_progress(marker_elapsed, INTRO_MARKER_DURATION_MS);
+  int minute = s_time.tm_min;
+  int completed_markers = minute / 5;
+  int active_progress = minute % 5;
+  GPoint marker_center = marker_center_for_index(center, radius, marker_index);
+
+  if (marker_index < completed_markers) {
+    draw_intro_marker_piece(ctx, center, marker_center, COMPLETE_MARKER_SIZE, progress);
+    return;
+  }
+
+  bool is_active = marker_index == completed_markers && active_progress > 0;
+  for (int i = 0; i < DOT_COUNT; i++) {
+    bool is_active_pixel = is_active && i < active_progress;
+    int16_t offset = is_active_pixel ? ACTIVE_MARKER_OFFSET : FUTURE_MARKER_OFFSET;
+    int16_t size = is_active_pixel ? ACTIVE_MARKER_SIZE : FUTURE_MARKER_SIZE;
+    GPoint target = marker_dot_for_index(marker_center, ordered_dot_index(i), offset);
+    draw_intro_marker_piece(ctx, center, target, size, progress);
   }
 }
 
@@ -500,23 +623,43 @@ static void draw_kinetic_top_hour_falling_blocks(GContext *ctx, GRect bounds,
   }
 }
 
-static void draw_pixel_digit(GContext *ctx, int digit, GPoint origin, int16_t pixel_size, int16_t gap) {
-  for (int row = 0; row < PIXEL_ROWS; row++) {
-    for (int col = 0; col < PIXEL_COLS; col++) {
-      if (DIGITS[digit][row] & (1 << (PIXEL_COLS - col - 1))) {
-        GRect rect = GRect(
-          origin.x + col * (pixel_size + gap),
-          origin.y + row * (pixel_size + gap),
-          pixel_size,
-          pixel_size
-        );
-        graphics_fill_rect(ctx, rect, 0, GCornerNone);
-      }
-    }
-  }
+// Per-pixel start delay that sweeps the lit hour pixels in clockwise from 12
+// o'clock: a pixel's angle around the center maps to how late it flies in.
+static int32_t intro_hour_pixel_delay(GPoint target, GPoint center) {
+  // atan2_lookup(sin-axis, cos-axis) matches the sin/cos convention used
+  // elsewhere (0 = up, increasing clockwise). If the sweep runs the wrong way,
+  // flip with (TRIG_MAX_ANGLE - angle).
+  int32_t angle = atan2_lookup((int16_t)(target.x - center.x),
+                               (int16_t)(center.y - target.y)) & 0xFFFF;
+  return (angle * INTRO_HOUR_SWEEP_MS) / TRIG_MAX_ANGLE;
 }
 
-static void draw_pixel_hour(GContext *ctx, GRect bounds, HourMode mode) {
+static void draw_intro_hour_pixel(GContext *ctx, GPoint center, GPoint target,
+                                  int16_t pixel, int32_t intro_elapsed) {
+  int32_t pixel_elapsed = intro_elapsed - intro_hour_pixel_delay(target, center);
+  if (pixel_elapsed <= 0) {
+    return;
+  }
+  if (pixel_elapsed >= INTRO_HOUR_PIECE_MS) {
+    fill_centered_rect(ctx, target, pixel);
+    return;
+  }
+
+  // Fly out from the center to the target while growing to full size.
+  int32_t eased = ease_out_progress(clamp_progress(pixel_elapsed, INTRO_HOUR_PIECE_MS));
+  GPoint position = GPoint(
+    kinetic_lerp_int16(center.x, target.x, eased),
+    kinetic_lerp_int16(center.y, target.y, eased)
+  );
+  int16_t size = (pixel * eased) / 1000;
+  if (size < 1) {
+    size = 1;
+  }
+  fill_centered_rect(ctx, position, size);
+}
+
+static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mode,
+                                       int32_t intro_elapsed) {
   bool is_24h = s_settings.time_mode == TimeModeWatch ? clock_is_24h_style() :
                                                      s_settings.time_mode == TimeMode24Hour;
   int hour = s_time.tm_hour;
@@ -549,13 +692,44 @@ static void draw_pixel_hour(GContext *ctx, GRect bounds, HourMode mode) {
               PBL_IF_ROUND_ELSE(mode == HourModeCompact ? (bounds.size.h >= 220 ? 0 : -20)
                                                         : HOUR_Y_OFFSET,
                                 HOUR_Y_OFFSET);
+  GPoint center = grect_center_point(&bounds);
 
   if (draw_tens) {
-    draw_pixel_digit(ctx, tens, GPoint(x, y), pixel, gap);
+    GPoint origin = GPoint(x, y);
+    for (int row = 0; row < PIXEL_ROWS; row++) {
+      for (int col = 0; col < PIXEL_COLS; col++) {
+        if (!(DIGITS[tens][row] & (1 << (PIXEL_COLS - col - 1)))) {
+          continue;
+        }
+
+        GPoint target = GPoint(
+          origin.x + col * (pixel + gap) + pixel / 2,
+          origin.y + row * (pixel + gap) + pixel / 2
+        );
+        draw_intro_hour_pixel(ctx, center, target, pixel, intro_elapsed);
+      }
+    }
     x += digit_width + digit_gap;
   }
 
-  draw_pixel_digit(ctx, ones, GPoint(x, y), pixel, gap);
+  GPoint origin = GPoint(x, y);
+  for (int row = 0; row < PIXEL_ROWS; row++) {
+    for (int col = 0; col < PIXEL_COLS; col++) {
+      if (!(DIGITS[ones][row] & (1 << (PIXEL_COLS - col - 1)))) {
+        continue;
+      }
+
+      GPoint target = GPoint(
+        origin.x + col * (pixel + gap) + pixel / 2,
+        origin.y + row * (pixel + gap) + pixel / 2
+      );
+      draw_intro_hour_pixel(ctx, center, target, pixel, intro_elapsed);
+    }
+  }
+}
+
+static void draw_pixel_hour(GContext *ctx, GRect bounds, HourMode mode) {
+  draw_pixel_hour_with_intro(ctx, bounds, mode, INTRO_HOUR_DURATION_MS);
 }
 
 static GFont complication_label_font(void) {
@@ -1107,6 +1281,28 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
+  int32_t intro_elapsed = 0;
+  bool intro_active = intro_elapsed_ms(&intro_elapsed);
+  if (intro_active && intro_elapsed >= INTRO_DURATION_MS) {
+    s_intro_active = false;
+    intro_active = false;
+  }
+
+  if (intro_active) {
+    // Hold blank for INTRO_LEAD_MS so the launch/display lag doesn't eat the
+    // start of the sweep; the hour->ring choreography plays after the lead.
+    int32_t anim_elapsed = intro_elapsed - INTRO_LEAD_MS;
+    graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.hour_color));
+    draw_pixel_hour_with_intro(ctx, content_bounds, hour_mode, anim_elapsed);
+
+    graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
+    for (int i = 0; i < MARKER_COUNT; i++) {
+      draw_intro_marker(ctx, center, radius, i, anim_elapsed);
+    }
+    intro_update_frame_timer();
+    return;
+  }
+
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.ring_color));
   for (int i = 0; i < MARKER_COUNT; i++) {
     draw_marker(ctx, center, radius, i);
@@ -1582,6 +1778,45 @@ static void kinetic_update_frame_timer(void) {
   }
 }
 
+static void intro_frame_timer_handler(void *context) {
+  (void)context;
+  s_intro_frame_timer = NULL;
+
+  int32_t elapsed;
+  if (intro_elapsed_ms(&elapsed) && elapsed < INTRO_DURATION_MS) {
+    if (s_canvas_layer) {
+      layer_mark_dirty(s_canvas_layer);
+    }
+    intro_update_frame_timer();
+    return;
+  }
+
+  s_intro_active = false;
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+}
+
+static void intro_update_frame_timer(void) {
+  int32_t elapsed;
+  bool should_run = intro_elapsed_ms(&elapsed) && elapsed < INTRO_DURATION_MS;
+
+  if (should_run && !s_intro_frame_timer) {
+    s_intro_frame_timer = app_timer_register(INTRO_FRAME_MS, intro_frame_timer_handler, NULL);
+  } else if (!should_run && s_intro_frame_timer) {
+    app_timer_cancel(s_intro_frame_timer);
+    s_intro_frame_timer = NULL;
+  }
+}
+
+static void intro_start(void) {
+  s_intro_active = true;
+  s_intro_started = false;
+  if (s_canvas_layer) {
+    layer_mark_dirty(s_canvas_layer);
+  }
+}
+
 static void kinetic_arm_timer_handler(void *context) {
   (void)context;
   s_kinetic_arm_timer = NULL;
@@ -1636,6 +1871,7 @@ static void window_load(Window *window) {
 
 static void window_unload(Window *window) {
   layer_destroy(s_canvas_layer);
+  s_canvas_layer = NULL;
 }
 
 static void fonts_load(void) {
@@ -1683,7 +1919,8 @@ static void init(void) {
   app_message_register_inbox_received(inbox_received_handler);
   app_message_open(256, 256);
 
-  window_stack_push(s_window, true);
+  intro_start();
+  window_stack_push(s_window, false);
   app_timer_register(1000, (AppTimerCallback)request_weather, NULL);
 }
 
@@ -1714,6 +1951,12 @@ static void deinit(void) {
   if (s_kinetic_arm_timer) {
     app_timer_cancel(s_kinetic_arm_timer);
     s_kinetic_arm_timer = NULL;
+  }
+  s_intro_active = false;
+  s_intro_started = false;
+  if (s_intro_frame_timer) {
+    app_timer_cancel(s_intro_frame_timer);
+    s_intro_frame_timer = NULL;
   }
   app_message_deregister_callbacks();
   window_destroy(s_window);

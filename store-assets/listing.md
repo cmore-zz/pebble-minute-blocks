@@ -28,17 +28,17 @@ The PBW currently targets `aplite`, `basalt`, `chalk`, `diorite`, `emery`, `flin
 
 A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and centered complications on round Pebble watches (two on Pebble Time Round, four on the larger Pebble Round 2).
 
-Also includes optional retro-style animations every minute (blocks fall into place, smash together, then fall away at top of the hour).
+Includes launch animation, plus optional retro-style animations every minute (blocks fall into place, smash together, then fall away at top of the hour).
 
 ## Description
 
-**Tell time in blocks: chunky pixel digits for the hour, ringed by twelve markers that fill in block by block as the minutes pass.**
+_Paste the plain-text block below into the portal's description field — it renders no markdown, so emphasis is done with CAPITALS, not `**bold**`. The headline plus the first paragraph is enough if you want it short. Everything after this section (Animations, Assets, etc.) is maintainer reference, not pasted._
+
+TELL TIME IN BLOCKS: chunky pixel digits for the hour, ringed by twelve markers that fill in block by block as the minutes pass.
 
 Configurable corner complications show date, weather, battery, Bluetooth, or steps (centered on round watches). They stay visible or hide until you shake the watch, and every element's color is customizable. Weather comes from Open-Meteo via the phone's location — no API key needed.
 
-Two optional extras, both off by default: a subtle seconds sweep, and a "Kinetic" mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
-
-*Appstore note: real listings are short and visual — the bold line plus the first paragraph is enough for the description field. Everything below is reference detail.*
+On launch the face sweeps into place clockwise and settles with a pulse. Two optional extras, both off by default: a subtle SECONDS sweep, and a KINETIC mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
 
 ## Animations
 

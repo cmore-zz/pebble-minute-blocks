@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 1.0.0
+- Version: 1.1.0
 - Website URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Support email: pebble@cmore.org

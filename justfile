@@ -7,6 +7,10 @@ default: build
 build:
     unset CC CXX && pebble build
 
+test:
+    node --test tests/*.test.js
+    @test_bin=$(mktemp /tmp/minute-blocks-weather-test.XXXXXX); trap 'rm -f "$test_bin"' EXIT; cc -std=c99 -Wall -Wextra -Werror tests/weather-cache.test.c -o "$test_bin" && "$test_bin"
+
 clean:
     unset CC CXX && pebble clean
 

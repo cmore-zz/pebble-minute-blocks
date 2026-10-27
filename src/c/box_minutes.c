@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include "weather_cache.h"
 
 #define MARKER_COUNT 12
 #define DOT_COUNT 4
@@ -6,15 +7,18 @@
 #define PIXEL_COLS 3
 
 #if defined(PBL_PLATFORM_EMERY)
-#define FUTURE_MARKER_SIZE 4
-#define ACTIVE_MARKER_SIZE 9
-#define COMPLETE_MARKER_SIZE 16
-#define FUTURE_MARKER_OFFSET 4
-#define ACTIVE_MARKER_OFFSET 6
-#define HOUR_PIXEL_SIZE 11
-#define HOUR_COMPACT_PIXEL_SIZE 8
-#define HOUR_OVERLAY_PIXEL_SIZE 7
+// Large mode adds ~25% to the blocks. Inset the ring enough to keep the
+// separated active pixels and the intro pulse inside the display.
+#define FUTURE_MARKER_SIZE (s_settings.large_blocks ? 5 : 4)
+#define ACTIVE_MARKER_SIZE (s_settings.large_blocks ? 11 : 9)
+#define COMPLETE_MARKER_SIZE (s_settings.large_blocks ? 20 : 16)
+#define FUTURE_MARKER_OFFSET (s_settings.large_blocks ? 5 : 4)
+#define ACTIVE_MARKER_OFFSET (s_settings.large_blocks ? 7 : 6)
+#define HOUR_PIXEL_SIZE (s_settings.large_blocks ? 14 : 11)
+#define HOUR_COMPACT_PIXEL_SIZE (s_settings.large_blocks ? 10 : 8)
+#define HOUR_OVERLAY_PIXEL_SIZE (s_settings.large_blocks ? 9 : 7)
 #define HOUR_Y_OFFSET 0
+#define RING_INSET (s_settings.large_blocks ? 17 : 12)
 #elif defined(PBL_PLATFORM_CHALK)
 #define FUTURE_MARKER_SIZE 3
 #define ACTIVE_MARKER_SIZE 7
@@ -78,12 +82,6 @@
 #define USE_VISITOR_COMPLICATION_FONT 1
 #define COMPLICATION_SLOT_COUNT 4
 #define COMPLICATION_REVEAL_MS 7000
-#define LIGHT_POLL_MS 1000
-// Backlight-based reveal polls light_is_on() once a second whenever a tap-to-show
-// option is set, which is the only always-on CPU wake. Set to 0 to skip that poll
-// and rely solely on the (free, event-driven) accelerometer tap for reveal -- once
-// tap reveal is confirmed reliable on the target hardware (notably PT2).
-#define ENABLE_LIGHT_MONITORING 0
 #define KINETIC_FRAME_MS 33
 #define KINETIC_FALL_PIXELS_PER_SECOND 220
 #define KINETIC_SMASH_DURATION_MS 1500
@@ -157,29 +155,6 @@ typedef enum {
 } HourMode;
 
 enum {
-  ConfigKeyBackgroundColor = 10000,
-  ConfigKeyRingColor = 10001,
-  ConfigKeyComplicationColor = 10002,
-  ConfigKeyHourColor = 10003,
-  ConfigKeyTimeMode = 10004,
-  ConfigKeyComplicationSize = 10005,
-  ConfigKeyWeatherEnabled = 10006,
-  ConfigKeyWeatherUnits = 10007,
-  ConfigKeyWeatherTemp = 10008,
-  ConfigKeyWeatherAvailable = 10009,
-  ConfigKeyWeatherRequest = 10010,
-  ConfigKeyWeatherHigh = 10011,
-  ConfigKeyWeatherLow = 10012,
-  ConfigKeyComplicationVisibility = 10013,
-  ConfigKeyComplicationTopLeft = 10014,
-  ConfigKeyComplicationTopRight = 10015,
-  ConfigKeyComplicationBottomRight = 10016,
-  ConfigKeyComplicationBottomLeft = 10017,
-  ConfigKeySecondsVisibility = 10018,
-  ConfigKeyKineticEnabled = 10019,
-};
-
-enum {
   PersistKeySettingsVersion = 1,
   PersistKeyBackgroundColor,
   PersistKeyRingColor,
@@ -200,6 +175,8 @@ enum {
   PersistKeyComplicationBottomLeft,
   PersistKeySecondsVisibility,
   PersistKeyKineticEnabled,
+  PersistKeyLargeBlocks,
+  PersistKeyWeatherUpdatedAt,
 };
 
 enum {
@@ -220,9 +197,11 @@ typedef struct {
   int weather_high;
   int weather_low;
   bool weather_available;
+  time_t weather_updated_at;
   int complication_visibility;
   int seconds_visibility;
   bool kinetic_enabled;
+  bool large_blocks;
   int complications[COMPLICATION_SLOT_COUNT];
 } Settings;
 
@@ -234,12 +213,9 @@ static bool s_bluetooth_connected;
 static int s_steps = -1;
 static bool s_complications_revealed;
 static AppTimer *s_complication_reveal_timer;
-static AppTimer *s_light_poll_timer;
 static AppTimer *s_kinetic_frame_timer;
 static AppTimer *s_kinetic_arm_timer;
 static AppTimer *s_intro_frame_timer;
-static bool s_light_poll_active;
-static bool s_was_light_on;
 static bool s_intro_active;
 static bool s_intro_started;
 static time_t s_intro_start_time;
@@ -250,7 +226,7 @@ static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
 
 static void refresh_time(void);
-static void update_light_polling(void);
+static void update_backlight_subscription(void);
 static void update_tick_subscription(void);
 static void kinetic_update_frame_timer(void);
 static void kinetic_schedule_arm_timer(void);
@@ -1000,6 +976,11 @@ static void format_steps(char *buffer, size_t size) {
   }
 }
 
+static bool weather_visible(void) {
+  return s_settings.weather_enabled && s_settings.weather_available &&
+         weather_cache_is_fresh(time(NULL), s_settings.weather_updated_at);
+}
+
 static bool format_complication_text(int type, char *buffer, size_t size) {
   char date_label[8];
   char steps_text[12];
@@ -1011,14 +992,14 @@ static bool format_complication_text(int type, char *buffer, size_t size) {
       snprintf(buffer, size, "%s %02d", date_label, s_time.tm_mday);
       return true;
     case ComplicationWeather:
-      if (s_settings.weather_enabled && s_settings.weather_available) {
+      if (weather_visible()) {
         snprintf(buffer, size, "%d%s", s_settings.weather_temp, weather_suffix);
       } else {
         snprintf(buffer, size, "--");
       }
       return true;
     case ComplicationForecast:
-      if (s_settings.weather_enabled && s_settings.weather_available) {
+      if (weather_visible()) {
         snprintf(buffer, size, "%d-%d%s", s_settings.weather_low, s_settings.weather_high,
                  weather_suffix);
       } else {
@@ -1124,7 +1105,7 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, b
       break;
     }
     case ComplicationWeather:
-      if (s_settings.weather_enabled && s_settings.weather_available) {
+      if (weather_visible()) {
         char weather_number[8];
         snprintf(weather_number, sizeof(weather_number), "%d", s_settings.weather_temp);
         draw_aligned_number_with_suffix(ctx, weather_number, weather_suffix, rect, alignment);
@@ -1133,7 +1114,7 @@ static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, b
       }
       break;
     case ComplicationForecast:
-      if (s_settings.weather_enabled && s_settings.weather_available) {
+      if (weather_visible()) {
         char forecast_text[12];
         snprintf(forecast_text, sizeof(forecast_text), "%d-%d",
                  s_settings.weather_low, s_settings.weather_high);
@@ -1353,6 +1334,7 @@ static void settings_set_defaults(void) {
     .complication_visibility = ComplicationVisibilityOnTap,
     .seconds_visibility = SecondsVisibilityOnTap,
     .kinetic_enabled = false,
+    .large_blocks = false,
     .complications = {
       ComplicationDate,
       ComplicationWeather,
@@ -1394,6 +1376,8 @@ static void settings_load(void) {
                            persist_read_int(PersistKeyWeatherLow) : 0;
   s_settings.weather_available = persist_exists(PersistKeyWeatherAvailable) &&
                                  persist_read_bool(PersistKeyWeatherAvailable);
+  s_settings.weather_updated_at = persist_exists(PersistKeyWeatherUpdatedAt) ?
+                                 persist_read_int(PersistKeyWeatherUpdatedAt) : 0;
   s_settings.complication_visibility = persist_exists(PersistKeyComplicationVisibility) ?
                                        persist_read_int(PersistKeyComplicationVisibility) :
                                        ComplicationVisibilityOnTap;
@@ -1410,6 +1394,9 @@ static void settings_load(void) {
   }
   s_settings.kinetic_enabled = persist_exists(PersistKeyKineticEnabled) &&
                                persist_read_bool(PersistKeyKineticEnabled);
+
+  s_settings.large_blocks = persist_exists(PersistKeyLargeBlocks) &&
+                            persist_read_bool(PersistKeyLargeBlocks);
 
   int persist_keys[COMPLICATION_SLOT_COUNT] = {
     PersistKeyComplicationTopLeft,
@@ -1443,6 +1430,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyWeatherHigh, s_settings.weather_high);
   persist_write_int(PersistKeyWeatherLow, s_settings.weather_low);
   persist_write_bool(PersistKeyWeatherAvailable, s_settings.weather_available);
+  persist_write_int(PersistKeyWeatherUpdatedAt, (int32_t)s_settings.weather_updated_at);
   persist_write_int(PersistKeyComplicationVisibility, s_settings.complication_visibility);
   persist_write_int(PersistKeyComplicationTopLeft, s_settings.complications[ComplicationSlotTopLeft]);
   persist_write_int(PersistKeyComplicationTopRight, s_settings.complications[ComplicationSlotTopRight]);
@@ -1450,6 +1438,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyComplicationBottomLeft, s_settings.complications[ComplicationSlotBottomLeft]);
   persist_write_int(PersistKeySecondsVisibility, s_settings.seconds_visibility);
   persist_write_bool(PersistKeyKineticEnabled, s_settings.kinetic_enabled);
+  persist_write_bool(PersistKeyLargeBlocks, s_settings.large_blocks);
 }
 
 static void request_weather(void) {
@@ -1463,30 +1452,36 @@ static void request_weather(void) {
     return;
   }
 
-  dict_write_uint8(iter, ConfigKeyWeatherRequest, 1);
+  dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, 1);
   app_message_outbox_send();
 }
 
+static void request_weather_timer_handler(void *context) {
+  (void)context;
+  request_weather();
+}
+
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
-  Tuple *background = dict_find(iter, ConfigKeyBackgroundColor);
-  Tuple *ring = dict_find(iter, ConfigKeyRingColor);
-  Tuple *complication = dict_find(iter, ConfigKeyComplicationColor);
-  Tuple *hour = dict_find(iter, ConfigKeyHourColor);
-  Tuple *time_mode = dict_find(iter, ConfigKeyTimeMode);
-  Tuple *complication_size = dict_find(iter, ConfigKeyComplicationSize);
-  Tuple *weather_enabled = dict_find(iter, ConfigKeyWeatherEnabled);
-  Tuple *weather_units = dict_find(iter, ConfigKeyWeatherUnits);
-  Tuple *weather_temp = dict_find(iter, ConfigKeyWeatherTemp);
-  Tuple *weather_available = dict_find(iter, ConfigKeyWeatherAvailable);
-  Tuple *weather_high = dict_find(iter, ConfigKeyWeatherHigh);
-  Tuple *weather_low = dict_find(iter, ConfigKeyWeatherLow);
-  Tuple *complication_visibility = dict_find(iter, ConfigKeyComplicationVisibility);
-  Tuple *complication_top_left = dict_find(iter, ConfigKeyComplicationTopLeft);
-  Tuple *complication_top_right = dict_find(iter, ConfigKeyComplicationTopRight);
-  Tuple *complication_bottom_right = dict_find(iter, ConfigKeyComplicationBottomRight);
-  Tuple *complication_bottom_left = dict_find(iter, ConfigKeyComplicationBottomLeft);
-  Tuple *seconds_visibility = dict_find(iter, ConfigKeySecondsVisibility);
-  Tuple *kinetic_enabled = dict_find(iter, ConfigKeyKineticEnabled);
+  Tuple *background = dict_find(iter, MESSAGE_KEY_BackgroundColor);
+  Tuple *ring = dict_find(iter, MESSAGE_KEY_RingColor);
+  Tuple *complication = dict_find(iter, MESSAGE_KEY_ComplicationColor);
+  Tuple *hour = dict_find(iter, MESSAGE_KEY_HourColor);
+  Tuple *time_mode = dict_find(iter, MESSAGE_KEY_TimeMode);
+  Tuple *complication_size = dict_find(iter, MESSAGE_KEY_ComplicationSize);
+  Tuple *weather_enabled = dict_find(iter, MESSAGE_KEY_WeatherEnabled);
+  Tuple *weather_units = dict_find(iter, MESSAGE_KEY_WeatherUnits);
+  Tuple *weather_temp = dict_find(iter, MESSAGE_KEY_WeatherTemp);
+  Tuple *weather_available = dict_find(iter, MESSAGE_KEY_WeatherAvailable);
+  Tuple *weather_high = dict_find(iter, MESSAGE_KEY_WeatherHigh);
+  Tuple *weather_low = dict_find(iter, MESSAGE_KEY_WeatherLow);
+  Tuple *complication_visibility = dict_find(iter, MESSAGE_KEY_ComplicationVisibility);
+  Tuple *complication_top_left = dict_find(iter, MESSAGE_KEY_ComplicationTopLeft);
+  Tuple *complication_top_right = dict_find(iter, MESSAGE_KEY_ComplicationTopRight);
+  Tuple *complication_bottom_right = dict_find(iter, MESSAGE_KEY_ComplicationBottomRight);
+  Tuple *complication_bottom_left = dict_find(iter, MESSAGE_KEY_ComplicationBottomLeft);
+  Tuple *seconds_visibility = dict_find(iter, MESSAGE_KEY_SecondsVisibility);
+  Tuple *kinetic_enabled = dict_find(iter, MESSAGE_KEY_KineticEnabled);
+  Tuple *large_blocks = dict_find(iter, MESSAGE_KEY_LargeBlocks);
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -1518,6 +1513,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   if (weather_units) {
     int units = (int)weather_units->value->int32;
     if (units >= WeatherUnitsF && units <= WeatherUnitsC) {
+      if (units != s_settings.weather_units) {
+        s_settings.weather_available = false;
+      }
       s_settings.weather_units = units;
     }
   }
@@ -1531,7 +1529,13 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     s_settings.weather_low = (int)weather_low->value->int32;
   }
   if (weather_available) {
-    s_settings.weather_available = weather_available->value->int32 != 0;
+    // Only a complete successful response renews the cache. Settings changes
+    // and partial/unavailable messages must never extend its lifetime.
+    s_settings.weather_available = weather_available->value->int32 != 0 &&
+                                   weather_temp && weather_high && weather_low;
+    if (s_settings.weather_available) {
+      s_settings.weather_updated_at = time(NULL);
+    }
   }
   if (complication_visibility) {
     int visibility = (int)complication_visibility->value->int32;
@@ -1544,6 +1548,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (visibility >= SecondsVisibilityNever && visibility <= SecondsVisibilityOnTap) {
       s_settings.seconds_visibility = visibility;
     }
+  }
+  if (large_blocks) {
+    s_settings.large_blocks = large_blocks->value->int32 != 0;
   }
   if (kinetic_enabled) {
     s_settings.kinetic_enabled = kinetic_enabled->value->int32 != 0;
@@ -1575,7 +1582,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 
   settings_save();
   refresh_steps();
-  update_light_polling();
+  update_backlight_subscription();
   update_tick_subscription();
   if (s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
@@ -1676,44 +1683,23 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   reveal_details();
 }
 
-static void light_poll_timer_handler(void *context) {
-  s_light_poll_timer = NULL;
-
-  if (!s_light_poll_active) {
-    return;
-  }
-
-  bool is_light_on = light_is_on();
-  if (is_light_on && !s_was_light_on) {
+#ifdef _PBL_API_EXISTS_backlight_service_subscribe
+static void backlight_handler(bool on) {
+  if (on) {
     reveal_details();
   }
-  s_was_light_on = is_light_on;
-
-  s_light_poll_timer = app_timer_register(LIGHT_POLL_MS, light_poll_timer_handler, NULL);
 }
-
-static void update_light_polling(void) {
-#if ENABLE_LIGHT_MONITORING
-  bool should_poll = s_settings.complication_visibility == ComplicationVisibilityOnTap ||
-                     s_settings.seconds_visibility == SecondsVisibilityOnTap;
-#else
-  bool should_poll = false;
 #endif
 
-  if (should_poll && !s_light_poll_active) {
-    s_light_poll_active = true;
-    s_was_light_on = light_is_on();
-    if (!s_light_poll_timer) {
-      s_light_poll_timer = app_timer_register(LIGHT_POLL_MS, light_poll_timer_handler, NULL);
-    }
-  } else if (!should_poll && s_light_poll_active) {
-    s_light_poll_active = false;
-    if (s_light_poll_timer) {
-      app_timer_cancel(s_light_poll_timer);
-      s_light_poll_timer = NULL;
-    }
-    s_was_light_on = false;
+static void update_backlight_subscription(void) {
+#ifdef _PBL_API_EXISTS_backlight_service_subscribe
+  if (s_settings.complication_visibility == ComplicationVisibilityOnTap ||
+      s_settings.seconds_visibility == SecondsVisibilityOnTap) {
+    backlight_service_subscribe(backlight_handler);
+  } else {
+    backlight_service_unsubscribe();
   }
+#endif
 }
 
 static void update_tick_subscription(void) {
@@ -1891,7 +1877,7 @@ static void init(void) {
   fonts_load();
   refresh_time();
   s_battery_state = battery_state_service_peek();
-  s_bluetooth_connected = bluetooth_connection_service_peek();
+  s_bluetooth_connected = connection_service_peek_pebble_app_connection();
   refresh_steps();
 
   s_window = window_create();
@@ -1903,7 +1889,9 @@ static void init(void) {
 
   update_tick_subscription();
   battery_state_service_subscribe(battery_handler);
-  bluetooth_connection_service_subscribe(bluetooth_handler);
+  connection_service_subscribe((ConnectionHandlers) {
+    .pebble_app_connection_handler = bluetooth_handler,
+  });
   accel_tap_service_subscribe(accel_tap_handler);
 #ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
   unobstructed_area_service_subscribe((UnobstructedAreaHandlers) {
@@ -1915,19 +1903,19 @@ static void init(void) {
 #if defined(PBL_TOUCH)
   touch_service_subscribe(touch_handler, NULL);
 #endif
-  update_light_polling();
+  update_backlight_subscription();
   app_message_register_inbox_received(inbox_received_handler);
   app_message_open(256, 256);
 
   intro_start();
   window_stack_push(s_window, false);
-  app_timer_register(1000, (AppTimerCallback)request_weather, NULL);
+  app_timer_register(1000, request_weather_timer_handler, NULL);
 }
 
 static void deinit(void) {
   tick_timer_service_unsubscribe();
   battery_state_service_unsubscribe();
-  bluetooth_connection_service_unsubscribe();
+  connection_service_unsubscribe();
   accel_tap_service_unsubscribe();
 #ifdef _PBL_API_EXISTS_unobstructed_area_service_unsubscribe
   unobstructed_area_service_unsubscribe();
@@ -1939,11 +1927,9 @@ static void deinit(void) {
     app_timer_cancel(s_complication_reveal_timer);
     s_complication_reveal_timer = NULL;
   }
-  s_light_poll_active = false;
-  if (s_light_poll_timer) {
-    app_timer_cancel(s_light_poll_timer);
-    s_light_poll_timer = NULL;
-  }
+#ifdef _PBL_API_EXISTS_backlight_service_unsubscribe
+  backlight_service_unsubscribe();
+#endif
   if (s_kinetic_frame_timer) {
     app_timer_cancel(s_kinetic_frame_timer);
     s_kinetic_frame_timer = NULL;

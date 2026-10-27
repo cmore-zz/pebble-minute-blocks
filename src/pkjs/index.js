@@ -10,6 +10,7 @@ var DEFAULT_SETTINGS = {
   ComplicationVisibility: 1,
   SecondsVisibility: 2,
   KineticEnabled: 0,
+  LargeBlocks: 0,
   ComplicationTopLeft: 1,
   ComplicationTopRight: 2,
   ComplicationBottomRight: 4,
@@ -96,6 +97,7 @@ function cloneDefaults() {
     ComplicationVisibility: DEFAULT_SETTINGS.ComplicationVisibility,
     SecondsVisibility: DEFAULT_SETTINGS.SecondsVisibility,
     KineticEnabled: DEFAULT_SETTINGS.KineticEnabled,
+    LargeBlocks: DEFAULT_SETTINGS.LargeBlocks,
     ComplicationTopLeft: DEFAULT_SETTINGS.ComplicationTopLeft,
     ComplicationTopRight: DEFAULT_SETTINGS.ComplicationTopRight,
     ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
@@ -173,10 +175,21 @@ function getWeather(settings) {
 
     req.onload = function() {
       try {
+        if (req.status < 200 || req.status >= 300) {
+          throw new Error("HTTP " + req.status);
+        }
         var data = JSON.parse(req.responseText);
-        var temp = Math.round(data.current.temperature_2m);
-        var high = Math.round(data.daily.temperature_2m_max[0]);
-        var low = Math.round(data.daily.temperature_2m_min[0]);
+        var readings = [data.current.temperature_2m,
+                        data.daily.temperature_2m_max[0],
+                        data.daily.temperature_2m_min[0]];
+        if (!readings.every(function(value) {
+          return typeof value === "number" && isFinite(value);
+        })) {
+          throw new Error("Missing temperature data");
+        }
+        var temp = Math.round(readings[0]);
+        var high = Math.round(readings[1]);
+        var low = Math.round(readings[2]);
         Pebble.sendAppMessage({
           WeatherTemp: temp,
           WeatherHigh: high,
@@ -194,7 +207,12 @@ function getWeather(settings) {
       sendWeatherUnavailable();
     };
 
+    req.ontimeout = function() {
+      console.log("Weather request timed out");
+      sendWeatherUnavailable();
+    };
     req.open("GET", url);
+    req.timeout = 30000;
     req.send();
   }, function(err) {
     console.log("Location failed: " + err.message);
@@ -257,7 +275,7 @@ function hiddenColorField(id, value) {
   return hiddenField(id, hexFromNumber(value));
 }
 
-function buildConfigHtml(settings, isRound, isBw, twoSlotRound) {
+function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
   var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
 
   return [
@@ -304,6 +322,10 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound) {
         { value: 1, label: "Medium" },
         { value: 2, label: "Large" }
       ]),
+    isPt2 ? selectField("Block size (hour and minute ring)", "largeBlocks", settings.LargeBlocks, [
+      { value: 0, label: "Normal" },
+      { value: 1, label: "Large" }
+    ]) : hiddenField("largeBlocks", settings.LargeBlocks),
     selectField("Complication visibility", "complicationVisibility", settings.ComplicationVisibility, [
       { value: 0, label: "Always shown" },
       { value: 1, label: "Shake to show" }
@@ -363,6 +385,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound) {
     "ComplicationColor:parseInt(document.getElementById('complication').value.slice(1),16),",
     "HourColor:parseInt(document.getElementById('hour').value.slice(1),16),",
     "TimeMode:parseInt(document.getElementById('timeMode').value,10),",
+    "LargeBlocks:parseInt(document.getElementById(\"largeBlocks\").value,10),",
     "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
     "ComplicationVisibility:parseInt(document.getElementById('complicationVisibility').value,10),",
     "SecondsVisibility:parseInt(document.getElementById('secondsVisibility').value,10),",
@@ -402,7 +425,7 @@ Pebble.addEventListener("showConfiguration", function() {
   var isRound = platform === "chalk" || platform === "gabbro";
   var twoSlotRound = platform === "chalk";
   Pebble.openURL("data:text/html," +
-                 encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound)));
+                 encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound, platform === "emery")));
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {
@@ -420,6 +443,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationSize = Number(settings.ComplicationSize);
     settings.ComplicationVisibility = Number(settings.ComplicationVisibility);
     settings.SecondsVisibility = Number(settings.SecondsVisibility);
+    settings.LargeBlocks = Number(settings.LargeBlocks) === 1 ? 1 : 0;
     settings.KineticEnabled = settings.KineticEnabled ? 1 : 0;
     settings.ComplicationTopLeft = Number(settings.ComplicationTopLeft);
     settings.ComplicationTopRight = Number(settings.ComplicationTopRight);

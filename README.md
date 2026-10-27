@@ -43,6 +43,8 @@ real hardware.)*
 
 ## Build
 
+Built and checked with Pebble SDK 4.33.1 for all seven target platforms.
+
 The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`
 clears host compiler overrides such as `CC=/opt/homebrew/bin/gcc-15` before
 building:
@@ -57,6 +59,9 @@ C compiler:
 ```sh
 pebble build
 ```
+
+Run the settings, weather, and cache expiry regression tests with `just test`
+(Node.js and a C compiler required).
 
 ## Install
 
@@ -89,9 +94,12 @@ The Pebble app settings page supports:
 - color presets, including the default cyan center digits with white ring and
   complications
 - time mode: watch setting, 12-hour, or 24-hour
+- block size on Pebble Time 2: normal or large (both center hour and outer ring)
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until you shake the watch
+  (or wake the backlight on supported firmware)
 - subtle seconds sweep: never, always, or hidden until you shake the watch
+  (or wake the backlight on supported firmware)
 - kinetic animations: blocks fall in, smash together on completion, and cascade
   at the top of the hour (off by default)
 - each corner complication: none, date, current temperature, forecast range,
@@ -101,7 +109,10 @@ The Pebble app settings page supports:
 
 Weather uses PebbleKit JS on the phone with location permission and Open-Meteo.
 It refreshes current temperature and the day's forecast range on startup and
-every 30 minutes.
+every 30 minutes. Failed, incomplete, or timed-out responses show unavailable
+weather. Cached readings expire after two hours, including while disconnected
+or after restarting the watchface. Switching temperature units hides the old
+reading until a fresh response arrives.
 
 ## Battery
 

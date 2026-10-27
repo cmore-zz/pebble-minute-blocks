@@ -41,6 +41,9 @@ together, and at the top of each hour every block cascades off the bottom.
 *(Captured on the emulator at ~10 fps; the animations run smoothly at 30 fps on
 real hardware.)*
 
+In PT2 Large mode, the final launch pulse breathes inward to keep the blocks
+inside the display; Normal mode retains the outward pulse.
+
 ## Build
 
 Built and checked with Pebble SDK 4.33.1 for all seven target platforms.

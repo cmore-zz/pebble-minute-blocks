@@ -8,7 +8,7 @@
 
 #if defined(PBL_PLATFORM_EMERY)
 // Large mode adds ~25% to the blocks. Keep the completed blocks as close
-// to the side edges as Normal mode, with a smaller pulse to avoid clipping.
+// to the side edges as Normal mode; breathe inward on launch to avoid clipping.
 #define FUTURE_MARKER_SIZE (s_settings.large_blocks ? 5 : 4)
 #define ACTIVE_MARKER_SIZE (s_settings.large_blocks ? 11 : 9)
 #define COMPLETE_MARKER_SIZE (s_settings.large_blocks ? 20 : 16)
@@ -19,7 +19,7 @@
 #define HOUR_OVERLAY_PIXEL_SIZE (s_settings.large_blocks ? 9 : 7)
 #define HOUR_Y_OFFSET 0
 #define RING_INSET (s_settings.large_blocks ? 14 : 12)
-#define INTRO_PULSE_AMPLITUDE (s_settings.large_blocks ? 1 : 4)
+#define INTRO_PULSE_AMPLITUDE (s_settings.large_blocks ? -4 : 4)
 #elif defined(PBL_PLATFORM_CHALK)
 #define FUTURE_MARKER_SIZE 3
 #define ACTIVE_MARKER_SIZE 7
@@ -99,7 +99,8 @@
 #define INTRO_RING_START_MS 300
 #define INTRO_MARKER_STAGGER_MS 42
 #define INTRO_MARKER_DURATION_MS 240
-// The whole ring pulses outward and back once it has fully landed.
+// The whole ring pulses and returns once it has fully landed. Large PT2
+// blocks breathe inward; other layouts breathe outward.
 #define INTRO_RING_LANDED_MS (INTRO_RING_START_MS + \
                               (MARKER_COUNT - 1) * INTRO_MARKER_STAGGER_MS + \
                               INTRO_MARKER_DURATION_MS)
@@ -444,7 +445,7 @@ static void draw_intro_marker_piece(GContext *ctx, GPoint origin, GPoint target,
   draw_marker_pixel(ctx, position, size);
 }
 
-// Outward-and-back radial offset for the whole ring once it has landed: 0 ->
+// Signed radial offset for the whole ring once it has landed: 0 ->
 // INTRO_PULSE_AMPLITUDE -> 0 over INTRO_PULSE_MS (a half-sine bump).
 static int16_t intro_ring_pulse_delta(int32_t intro_elapsed) {
   int32_t t = intro_elapsed - INTRO_RING_LANDED_MS - INTRO_PULSE_DELAY_MS;

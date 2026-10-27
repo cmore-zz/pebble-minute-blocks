@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 1.2.1
+- Version: 1.2.2
 - Website URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Support email: pebble@cmore.org
@@ -41,6 +41,10 @@ Configurable corner complications show date, weather, battery, Bluetooth, or ste
 On launch the face sweeps into place clockwise and settles with a pulse. Two optional extras, both off by default: a subtle SECONDS sweep, and a KINETIC mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
 
 Pebble Time 2 also offers a LARGE BLOCKS setting for a bolder hour and minute ring. Choose Normal or Large in settings.
+
+## Release Notes — 1.2.2
+
+- Restored a visible final launch pulse in PT2 Large mode: the ring now breathes inward, then returns to its resting position.
 
 ## Release Notes — 1.2.1
 

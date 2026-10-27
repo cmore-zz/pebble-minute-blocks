@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 1.1.0
+- Version: 1.2.0
 - Website URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Support email: pebble@cmore.org
@@ -28,17 +28,28 @@ The PBW currently targets `aplite`, `basalt`, `chalk`, `diorite`, `emery`, `flin
 
 A blocky digital watchface with minute-by-minute geometry, pixel text, and configurable corner "complications" on rectangular Pebble watches, and centered complications on round Pebble watches (two on Pebble Time Round, four on the larger Pebble Round 2).
 
-Includes launch animation, plus optional retro-style animations every minute (blocks fall into place, smash together, then fall away at top of the hour).
+Includes a launch animation, optional kinetic animations, and a larger-block option for the hour and minute ring on Pebble Time 2.
 
 ## Description
 
-_Paste the plain-text block below into the portal's description field — it renders no markdown, so emphasis is done with CAPITALS, not `**bold**`. The headline plus the first paragraph is enough if you want it short. Everything after this section (Animations, Assets, etc.) is maintainer reference, not pasted._
+_Paste the plain-text block below into the portal's description field — it renders no markdown, so emphasis is done with CAPITALS, not `**bold**`. The headline plus the first paragraph is enough if you want it short. Everything after this section (Release Notes, Animations, Assets, etc.) is maintainer reference, not pasted._
 
 TELL TIME IN BLOCKS: chunky pixel digits for the hour, ringed by twelve markers that fill in block by block as the minutes pass.
 
-Configurable corner complications show date, weather, battery, Bluetooth, or steps (centered on round watches). They stay visible or hide until you shake the watch, and every element's color is customizable. Weather comes from Open-Meteo via the phone's location — no API key needed.
+Configurable corner complications show date, weather, battery, Bluetooth, or steps (centered on round watches). They stay visible or hide until you shake the watch (or wake the backlight on supported firmware), and every element's color is customizable. Weather comes from Open-Meteo via the phone's location — no API key needed. Readings expire after two hours so a disconnected watch does not keep showing old temperatures.
 
 On launch the face sweeps into place clockwise and settles with a pulse. Two optional extras, both off by default: a subtle SECONDS sweep, and a KINETIC mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
+
+Pebble Time 2 also offers a LARGE BLOCKS setting for a bolder hour and minute ring. Choose Normal or Large in settings.
+
+## Release Notes — 1.2.0
+
+- Added optional larger hour and minute-ring blocks on Pebble Time 2.
+- Added reveal when the backlight turns on, on supported firmware.
+- Cached weather now expires after two hours, including across watchface restarts.
+- Changing weather units hides the old reading until fresh data arrives.
+- Improved handling of weather errors, missing readings, and request timeouts.
+- Updated connection APIs and rebuilt with Pebble SDK 4.33.1.
 
 ## Animations
 
@@ -93,6 +104,10 @@ The [Visitor](https://www.dafont.com/visitor.font) font is a Freeware font by Ae
 | Pebble 2 SE (`diorite`) | [`diorite-normal.png`](screenshots/diorite-normal.png) | [`diorite-active.png`](screenshots/diorite-active.png) | [`diorite-overlay.png`](screenshots/diorite-overlay.png) | [`diorite-overlay-active.png`](screenshots/diorite-overlay-active.png) |
 | Pebble 2 Duo (`flint`) | [`flint-normal.png`](screenshots/flint-normal.png) | [`flint-active.png`](screenshots/flint-active.png) | [`flint-overlay.png`](screenshots/flint-overlay.png) | [`flint-overlay-active.png`](screenshots/flint-overlay-active.png) |
 | Pebble Time 2 (`emery`) | [`emery-normal.png`](screenshots/emery-normal.png) | [`emery-active.png`](screenshots/emery-active.png) | [`emery-overlay.png`](screenshots/emery-overlay.png) | [`emery-overlay-active.png`](screenshots/emery-overlay-active.png) |
+
+PT2 block-size comparison: [`emery-blocks-normal.png`](screenshots/emery-blocks-normal.png)
+and [`emery-blocks-large.png`](screenshots/emery-blocks-large.png). Use the large
+preview as an additional PT2 screenshot when updating the listing.
 
 Regenerate screenshots with:
 

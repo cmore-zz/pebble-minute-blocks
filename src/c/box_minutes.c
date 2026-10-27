@@ -7,8 +7,8 @@
 #define PIXEL_COLS 3
 
 #if defined(PBL_PLATFORM_EMERY)
-// Large mode adds ~25% to the blocks. Inset the ring enough to keep the
-// separated active pixels and the intro pulse inside the display.
+// Large mode adds ~25% to the blocks. Keep the completed blocks as close
+// to the side edges as Normal mode, with a smaller pulse to avoid clipping.
 #define FUTURE_MARKER_SIZE (s_settings.large_blocks ? 5 : 4)
 #define ACTIVE_MARKER_SIZE (s_settings.large_blocks ? 11 : 9)
 #define COMPLETE_MARKER_SIZE (s_settings.large_blocks ? 20 : 16)
@@ -18,7 +18,8 @@
 #define HOUR_COMPACT_PIXEL_SIZE (s_settings.large_blocks ? 10 : 8)
 #define HOUR_OVERLAY_PIXEL_SIZE (s_settings.large_blocks ? 9 : 7)
 #define HOUR_Y_OFFSET 0
-#define RING_INSET (s_settings.large_blocks ? 17 : 12)
+#define RING_INSET (s_settings.large_blocks ? 14 : 12)
+#define INTRO_PULSE_AMPLITUDE (s_settings.large_blocks ? 1 : 4)
 #elif defined(PBL_PLATFORM_CHALK)
 #define FUTURE_MARKER_SIZE 3
 #define ACTIVE_MARKER_SIZE 7
@@ -103,7 +104,9 @@
                               (MARKER_COUNT - 1) * INTRO_MARKER_STAGGER_MS + \
                               INTRO_MARKER_DURATION_MS)
 #define INTRO_PULSE_MS 260
+#ifndef INTRO_PULSE_AMPLITUDE
 #define INTRO_PULSE_AMPLITUDE 4
+#endif
 // A settle/charge beat after the ring lands, before it pulses (must be at least
 // ~1 frame / 33ms to register).
 #define INTRO_PULSE_DELAY_MS 100

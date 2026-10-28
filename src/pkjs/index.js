@@ -6,6 +6,7 @@ var DEFAULT_SETTINGS = {
   ComplicationColor: 0xFFFFFF,
   HourColor: 0x00FFFF,
   TimeMode: 0,
+  HourLeadingZero: 1,
   ComplicationSize: 0,
   ComplicationVisibility: 1,
   SecondsVisibility: 2,
@@ -93,6 +94,7 @@ function cloneDefaults() {
     ComplicationColor: DEFAULT_SETTINGS.ComplicationColor,
     HourColor: DEFAULT_SETTINGS.HourColor,
     TimeMode: DEFAULT_SETTINGS.TimeMode,
+    HourLeadingZero: DEFAULT_SETTINGS.HourLeadingZero,
     ComplicationSize: DEFAULT_SETTINGS.ComplicationSize,
     ComplicationVisibility: DEFAULT_SETTINGS.ComplicationVisibility,
     SecondsVisibility: DEFAULT_SETTINGS.SecondsVisibility,
@@ -316,6 +318,10 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 1, label: "12 hour" },
       { value: 2, label: "24 hour" }
     ]),
+    selectField("24-hour leading zero", "leadingZero", settings.HourLeadingZero, [
+      { value: 1, label: "Show (01–09)" },
+      { value: 0, label: "Hide (1–9)" }
+    ]),
     isRound ? hiddenField("complicationSize", settings.ComplicationSize) :
       selectField("Complication size", "complicationSize", settings.ComplicationSize, [
         { value: 0, label: "Normal" },
@@ -385,6 +391,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     "ComplicationColor:parseInt(document.getElementById('complication').value.slice(1),16),",
     "HourColor:parseInt(document.getElementById('hour').value.slice(1),16),",
     "TimeMode:parseInt(document.getElementById('timeMode').value,10),",
+    "HourLeadingZero:parseInt(document.getElementById('leadingZero').value,10),",
     "LargeBlocks:parseInt(document.getElementById(\"largeBlocks\").value,10),",
     "ComplicationSize:parseInt(document.getElementById('complicationSize').value,10),",
     "ComplicationVisibility:parseInt(document.getElementById('complicationVisibility').value,10),",
@@ -440,6 +447,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationColor = numberFromHex(hexFromNumber(settings.ComplicationColor));
     settings.HourColor = numberFromHex(hexFromNumber(settings.HourColor));
     settings.TimeMode = Number(settings.TimeMode);
+    settings.HourLeadingZero = Number(settings.HourLeadingZero) === 0 ? 0 : 1;
     settings.ComplicationSize = Number(settings.ComplicationSize);
     settings.ComplicationVisibility = Number(settings.ComplicationVisibility);
     settings.SecondsVisibility = Number(settings.SecondsVisibility);

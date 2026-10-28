@@ -97,7 +97,9 @@ The Pebble app settings page supports:
 - color presets, including the default cyan center digits with white ring and
   complications
 - time mode: watch setting, 12-hour, or 24-hour
-- block size on Pebble Time 2: normal or large (both center hour and outer ring)
+- 24-hour leading zero: show (default) or hide, including when following the watch setting
+- block size on Pebble Time 2: normal or large (both center hour and outer ring);
+  Large mode centers hours 10–19 using the visible digit pixels
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until you shake the watch
   (or wake the backlight on supported firmware)

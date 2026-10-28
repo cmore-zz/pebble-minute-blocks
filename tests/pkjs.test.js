@@ -35,6 +35,7 @@ test('existing settings gain normal blocks without losing saved preferences', ()
   const { context } = phone('emery', JSON.stringify({ HourColor: 123, TimeMode: 2 }));
   const settings = context.loadSettings();
   assert.equal(settings.LargeBlocks, 0);
+  assert.equal(settings.HourLeadingZero, 1);
   assert.equal(settings.HourColor, 123);
   assert.equal(settings.TimeMode, 2);
 });
@@ -113,7 +114,7 @@ test('generated config Save returns the selected block size', () => {
   app.events.showConfiguration();
   const values = {
     background: '#000000', ring: '#ffffff', complication: '#ffffff', hour: '#00ffff',
-    timeMode: '0', largeBlocks: '1', complicationSize: '0', complicationVisibility: '1',
+    timeMode: '0', leadingZero: '0', largeBlocks: '1', complicationSize: '0', complicationVisibility: '1',
     secondsVisibility: '2', complicationTopLeft: '1', complicationTopRight: '2',
     complicationBottomRight: '4', complicationBottomLeft: '5', weatherUnits: '0'
   };
@@ -132,4 +133,21 @@ test('generated config Save returns the selected block size', () => {
   fields.save.onclick();
   const saved = JSON.parse(decodeURIComponent(result.split('#')[1]));
   assert.equal(saved.LargeBlocks, 1);
+  assert.equal(saved.HourLeadingZero, 0);
+});
+
+
+test('leading-zero preference is sent and survives loading saved settings', () => {
+  const app = phone('emery', JSON.stringify({ HourLeadingZero: 0 }));
+  assert.equal(app.context.loadSettings().HourLeadingZero, 0);
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(app.context.loadSettings())) });
+  assert.equal(app.messages[0].HourLeadingZero, 0);
+});
+
+test('older settings pages keep the existing leading-zero behavior', () => {
+  const app = phone();
+  const settings = app.context.cloneDefaults();
+  delete settings.HourLeadingZero;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
+  assert.equal(app.messages[0].HourLeadingZero, 1);
 });

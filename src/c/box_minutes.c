@@ -1,5 +1,6 @@
 #include <pebble.h>
 #include "weather_cache.h"
+#include "hour_layout.h"
 
 #define MARKER_COUNT 12
 #define DOT_COUNT 4
@@ -181,6 +182,7 @@ enum {
   PersistKeyKineticEnabled,
   PersistKeyLargeBlocks,
   PersistKeyWeatherUpdatedAt,
+  PersistKeyHourLeadingZero,
 };
 
 enum {
@@ -194,6 +196,7 @@ typedef struct {
   uint32_t complication_color;
   uint32_t hour_color;
   int time_mode;
+  bool hour_leading_zero;
   int complication_size;
   bool weather_enabled;
   int weather_units;
@@ -653,7 +656,7 @@ static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mod
 
   int tens = hour / 10;
   int ones = hour % 10;
-  bool draw_tens = is_24h || tens > 0;
+  bool draw_tens = hour_draw_tens(hour, is_24h, s_settings.hour_leading_zero);
 
   const int16_t pixel = mode == HourModeOverlay ? HOUR_OVERLAY_PIXEL_SIZE :
                         mode == HourModeCompact ? HOUR_COMPACT_PIXEL_SIZE :
@@ -664,6 +667,11 @@ static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mod
   const int16_t digit_gap = pixel;
   const int16_t total_width = draw_tens ? digit_width * 2 + digit_gap : digit_width;
   int16_t x = bounds.origin.x + (bounds.size.w - total_width) / 2;
+#if defined(PBL_PLATFORM_EMERY)
+  if (s_settings.large_blocks) {
+    x += hour_large_centering_offset(hour, draw_tens, pixel, gap);
+  }
+#endif
   // Compact mode makes room for round center complications. chalk nudges the
   // digits up to fit two lines below; gabbro's taller screen keeps them centered
   // so complications can sit both above and below. Inlined into the round branch
@@ -1328,6 +1336,7 @@ static void settings_set_defaults(void) {
     .complication_color = SETTINGS_DEFAULT_COMPLICATION,
     .hour_color = SETTINGS_DEFAULT_HOUR,
     .time_mode = TimeModeWatch,
+    .hour_leading_zero = true,
     .complication_size = ComplicationSizeNormal,
     .weather_enabled = true,
     .weather_units = WeatherUnitsF,
@@ -1365,6 +1374,8 @@ static void settings_load(void) {
   s_settings.hour_color = persist_read_color(PersistKeyHourColor, SETTINGS_DEFAULT_HOUR);
   s_settings.time_mode = persist_exists(PersistKeyTimeMode) ?
                          persist_read_int(PersistKeyTimeMode) : TimeModeWatch;
+  s_settings.hour_leading_zero = !persist_exists(PersistKeyHourLeadingZero) ||
+                                 persist_read_bool(PersistKeyHourLeadingZero);
   s_settings.complication_size = persist_exists(PersistKeyComplicationSize) ?
                                  persist_read_int(PersistKeyComplicationSize) :
                                  ComplicationSizeNormal;
@@ -1427,6 +1438,7 @@ static void settings_save(void) {
   persist_write_int(PersistKeyComplicationColor, (int)s_settings.complication_color);
   persist_write_int(PersistKeyHourColor, (int)s_settings.hour_color);
   persist_write_int(PersistKeyTimeMode, s_settings.time_mode);
+  persist_write_bool(PersistKeyHourLeadingZero, s_settings.hour_leading_zero);
   persist_write_int(PersistKeyComplicationSize, s_settings.complication_size);
   persist_write_bool(PersistKeyWeatherEnabled, s_settings.weather_enabled);
   persist_write_int(PersistKeyWeatherUnits, s_settings.weather_units);
@@ -1471,6 +1483,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *complication = dict_find(iter, MESSAGE_KEY_ComplicationColor);
   Tuple *hour = dict_find(iter, MESSAGE_KEY_HourColor);
   Tuple *time_mode = dict_find(iter, MESSAGE_KEY_TimeMode);
+  Tuple *hour_leading_zero = dict_find(iter, MESSAGE_KEY_HourLeadingZero);
   Tuple *complication_size = dict_find(iter, MESSAGE_KEY_ComplicationSize);
   Tuple *weather_enabled = dict_find(iter, MESSAGE_KEY_WeatherEnabled);
   Tuple *weather_units = dict_find(iter, MESSAGE_KEY_WeatherUnits);
@@ -1504,6 +1517,9 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
     if (mode >= TimeModeWatch && mode <= TimeMode24Hour) {
       s_settings.time_mode = mode;
     }
+  }
+  if (hour_leading_zero) {
+    s_settings.hour_leading_zero = hour_leading_zero->value->int32 != 0;
   }
   if (complication_size) {
     int size = (int)complication_size->value->int32;

@@ -46,6 +46,7 @@ Pebble Time 2 also offers a LARGE BLOCKS setting for a bolder hour and minute ri
 
 - Added a preference to show or hide the leading zero in 24-hour mode (shown by default).
 - PT2 Large mode now centers all two-digit hours by their visible pixels, including 01 and 21, while keeping the symmetric 11 centered.
+- PT2 Large mode checks the size and position of visible complications and temporarily shrinks the ring and hour when needed to prevent overlap, including long forecast ranges. Short values keep the full-size layout.
 
 ## Release Notes — 1.2.2
 

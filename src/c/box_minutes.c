@@ -568,10 +568,17 @@ static void draw_kinetic_completion_fragments(GContext *ctx, GPoint center, int1
   const int16_t gravity = 240;
 
   for (int i = 0; i < 4; i++) {
+    int16_t piece_size = fragment_size;
+#if defined(PBL_PLATFORM_EMERY)
+    if (s_settings.large_blocks) {
+      // Mix two larger chips into the burst so it reads against the big blocks.
+      piece_size += i == 0 ? 2 : i == 2 ? 1 : 0;
+    }
+#endif
     int32_t x = origin.x + (velocity_x[i] * elapsed) / 1000;
     int32_t y = origin.y + (velocity_y[i] * elapsed) / 1000 +
                 (gravity * elapsed * elapsed) / 1000000;
-    draw_marker_pixel(ctx, GPoint((int16_t)x, (int16_t)y), fragment_size);
+    draw_marker_pixel(ctx, GPoint((int16_t)x, (int16_t)y), piece_size);
   }
 }
 

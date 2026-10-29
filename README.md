@@ -37,6 +37,7 @@ Each minute, a new block falls into place on the active marker.
 
 When a five-minute marker completes the four blocks stretch apart and smash
 together, and at the top of each hour every block cascades off the bottom.
+PT2 Large mode mixes larger chips into the fragment burst for better visibility.
 
 *(Captured on the emulator at ~10 fps; the animations run smoothly at 30 fps on
 real hardware.)*

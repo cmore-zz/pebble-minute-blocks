@@ -319,10 +319,12 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 1, label: "12 hour" },
       { value: 2, label: "24 hour" }
     ]),
-    selectField("24-hour leading zero", "leadingZero", settings.HourLeadingZero, [
+    selectField("Leading zero (24-hour only)", "leadingZero", settings.HourLeadingZero, [
       { value: 1, label: "Show (08)" },
       { value: 0, label: "Hide (8)" }
     ]),
+    '<p style="font-size:14px;color:#aaa;margin:8px 0">12-hour time always omits the leading zero.</p>',
+
     isRound ? hiddenField("complicationSize", settings.ComplicationSize) :
       selectField("Complication size", "complicationSize", settings.ComplicationSize, [
         { value: 0, label: "Normal" },

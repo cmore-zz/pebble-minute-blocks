@@ -323,7 +323,6 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 1, label: "Show (08)" },
       { value: 0, label: "Hide (8)" }
     ]),
-    '<p style="font-size:14px;color:#aaa;margin:8px 0">12-hour time always omits the leading zero.</p>',
 
     isRound ? hiddenField("complicationSize", settings.ComplicationSize) :
       selectField("Complication size", "complicationSize", settings.ComplicationSize, [

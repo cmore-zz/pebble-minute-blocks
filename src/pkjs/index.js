@@ -284,6 +284,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     "<!doctype html>",
     "<html>",
     "<head>",
+    '<meta charset="utf-8">',
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
     "<style>",
     "body{margin:0;padding:18px 18px 24px;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;background:#111;color:#eee;}",
@@ -319,8 +320,8 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 2, label: "24 hour" }
     ]),
     selectField("24-hour leading zero", "leadingZero", settings.HourLeadingZero, [
-      { value: 1, label: "Show (01–09)" },
-      { value: 0, label: "Hide (1–9)" }
+      { value: 1, label: "Show (08)" },
+      { value: 0, label: "Hide (8)" }
     ]),
     isRound ? hiddenField("complicationSize", settings.ComplicationSize) :
       selectField("Complication size", "complicationSize", settings.ComplicationSize, [
@@ -431,7 +432,7 @@ Pebble.addEventListener("showConfiguration", function() {
   // ignores); only chalk collapses to two center slots, gabbro keeps all four.
   var isRound = platform === "chalk" || platform === "gabbro";
   var twoSlotRound = platform === "chalk";
-  Pebble.openURL("data:text/html," +
+  Pebble.openURL("data:text/html;charset=utf-8," +
                  encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound, platform === "emery")));
 });
 

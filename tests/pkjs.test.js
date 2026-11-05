@@ -9,11 +9,12 @@ function phone(platform = 'emery', saved, plugins = {}) {
   const messages = [];
   const requests = [];
   let configUrl;
+  const timers = [];
   const context = vm.createContext({
     console: { log() {} },
     require: name => require('../src/pkjs/' + name.slice(2)),
-    setTimeout: () => 1,
-    clearTimeout() {},
+    setTimeout: (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; },
+    clearTimeout(timer) { timer.cancelled = true; },
     localStorage: { getItem: () => saved, setItem() {} },
     Pebble: {
       addEventListener: (name, callback) => { events[name] = callback; },
@@ -32,7 +33,10 @@ function phone(platform = 'emery', saved, plugins = {}) {
     }
   });
   vm.runInContext(source, context);
-  return { context, events, messages, requests, html: () => decodeURIComponent(configUrl.split(',')[1]) };
+  return { context, events, messages, requests, html: () => {
+    timers.filter(t => t.delay === 2000 && !t.cancelled).forEach(t => { t.cancelled = true; t.fn(); });
+    return decodeURIComponent(configUrl.split(',')[1]);
+  } };
 }
 
 test('existing settings gain normal blocks without losing saved preferences', () => {
@@ -185,7 +189,7 @@ test('disabled or denied plugins retain built-in choices and saved favorites', (
   assert.equal(app.messages.at(-1).PluginTTL, 0);
   app.events.showConfiguration();
   assert.match(app.html(), /Top left plugin/);
-  assert.match(app.html(), /Plugin favorite 5/);
+  assert.match(app.html(), /Favorite 5 — Unavailable/);
 });
 
 test('old settings pages preserve saved favorite choices', () => {
@@ -237,4 +241,28 @@ test('weather refresh does not restart unchanged plugin subscriptions or clear r
   assert.equal(subs.length, 2);
   assert.equal(subs[0].stopped, false); assert.equal(subs[1].stopped, false);
   assert.equal(f.messages.filter(m => m.PluginSlot !== undefined).length, count);
+});
+
+test('configuration shows named favorites safely and retains an unconfigured saved selection', () => {
+  const requests = [];
+  const f = phone('emery', JSON.stringify({ PluginFavoriteTopLeft: 5 }), {
+    subscribeToSource(config) {
+      requests.push(config);
+      const text = text => ({ shortText: { text } });
+      config.onData({ instances: [{ properties: {
+        category: text('weather'), item: text('location'), property: text('<script>&temperature'),
+        index: { numericValue: { value: 0 } }
+      } }] });
+      return { unsubscribe() {} };
+    }
+  });
+  f.events.showConfiguration();
+  const html = f.html();
+  assert.match(html, /Use selected source above/);
+  assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
+  assert.match(html, /value="5" selected>Favorite 5 — Not configured/);
+  assert.match(html, /Settings → Plugins → Complications/);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].category, 'preferences');
+  new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 });

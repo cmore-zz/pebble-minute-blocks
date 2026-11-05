@@ -27,6 +27,17 @@ function favorite(settings, slot) {
   return typeof value === 'number' && value >= 1 && value <= 5 && value % 1 === 0 ? value : 0;
 }
 
+function binding(entry) {
+  var p = entry && entry.properties;
+  function text(key) { return p && p[key] && p[key].shortText && p[key].shortText.text; }
+  var result = [text('category'), text('item'), text('property'),
+    p && p.index && p.index.numericValue && p.index.numericValue.value];
+  if (!result.slice(0, 3).every(function(s) {
+    return typeof s === 'string' && s.length > 0 && s.length <= 128;
+  }) || typeof result[3] !== 'number' || result[3] < 0 || result[3] % 1 !== 0) return null;
+  return result;
+}
+
 function create(Pebble, send, now, schedule, cancel) {
   var selections = [], slots = [], preferences, session = 0, apiAvailable;
   var delivered = [], revisions = [], renewals = [];
@@ -118,16 +129,6 @@ function create(Pebble, send, now, schedule, cancel) {
       }
     });
   }
-  function binding(entry) {
-    var p = entry && entry.properties;
-    function text(key) { return p && p[key] && p[key].shortText && p[key].shortText.text; }
-    var result = [text('category'), text('item'), text('property'),
-      p && p.index && p.index.numericValue && p.index.numericValue.value];
-    if (!result.slice(0, 3).every(function(s) {
-      return typeof s === 'string' && s.length > 0 && s.length <= 128;
-    }) || typeof result[3] !== 'number' || result[3] < 0 || result[3] % 1 !== 0) return null;
-    return result;
-  }
   function update(entries) {
     selections.forEach(function(selected, slot) {
       var target = selected ? binding(entries[selected - 1]) : null;
@@ -177,4 +178,4 @@ function create(Pebble, send, now, schedule, cancel) {
   return { available: available, start: start };
 }
 
-module.exports = { create: create, textFor: textFor, favorite: favorite };
+module.exports = { create: create, textFor: textFor, favorite: favorite, binding: binding };

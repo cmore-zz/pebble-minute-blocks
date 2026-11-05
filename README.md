@@ -85,7 +85,12 @@ display value. Source IDs and saved corner choices retain their existing values.
 Built-in readings remain the default. On companion apps with the plugin API,
 each slot also offers Plugin favorite 1–5, in the order returned by the Pebble
 app's preferred-complication list. Choose favorites in the Pebble app and select
-one in Minute Blocks' settings. The slot's ordinary source remains its fallback;
+one in Minute Blocks' settings. Favorite labels identify the configured category,
+instance number and property (for example, Weather / Location 1 / Temperature).
+Empty favorites show Not configured; a failed list lookup shows Unavailable.
+Opening settings briefly reads only the favorites list, with a two-second timeout,
+without requesting the readings themselves. Use selected source above keeps the
+ordinary source selected. That source also remains the plugin's fallback;
 choosing None there makes the slot empty while a plugin is unavailable.
 
 The phone reads `preferences/complications`, follows the selected source/property

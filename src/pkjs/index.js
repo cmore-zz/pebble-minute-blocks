@@ -1,4 +1,5 @@
 var pluginSupport = require('./plugin-complications');
+var pluginFavorites = require('./plugin-favorites');
 var sendToWatch = require('./watch-messages')(Pebble, setTimeout);
 var pluginComplications = pluginSupport.create(Pebble, sendToWatch, function() { return Date.now(); }, setTimeout, clearTimeout);
 var PLUGIN_SLOTS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
@@ -253,6 +254,11 @@ function field(label, id, value) {
   ].join("");
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function selectField(label, id, value, options) {
   return [
     "<label for=\"" + id + "\">" + label + "</label>",
@@ -260,16 +266,17 @@ function selectField(label, id, value, options) {
     options.map(function(option) {
       return "<option value=\"" + option.value + "\"" +
         (Number(value) === option.value ? " selected" : "") + ">" +
-        option.label + "</option>";
+        escapeHtml(option.label) + "</option>";
     }).join(""),
     "</select>"
   ].join("");
 }
 
-function pluginField(label, slot, settings, hidden) {
+function pluginField(label, slot, settings, hidden, favoriteLabels) {
   var key = 'PluginFavorite' + slot;
-  var options = [{ value: 0, label: 'Use built-in reading' }];
-  for (var i = 1; i <= 5; i++) options.push({ value: i, label: 'Plugin favorite ' + i });
+  var options = [{ value: 0, label: 'Use selected source above' }];
+  favoriteLabels = favoriteLabels || pluginFavorites.labels(null);
+  for (var i = 1; i <= 5; i++) options.push({ value: i, label: favoriteLabels[i - 1] });
   return hidden || !pluginComplications.available() ? hiddenField(key, settings[key] || 0) :
     selectField(label + ' plugin', key, settings[key] || 0, options);
 }
@@ -303,7 +310,7 @@ function hiddenColorField(id, value) {
   return hiddenField(id, hexFromNumber(value));
 }
 
-function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
+function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteLabels) {
   var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
 
   return [
@@ -370,21 +377,21 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    pluginComplications.available() ? '<p>Plugin favorites come from the Pebble app. Each slot uses its built-in reading when a plugin is unavailable.</p>' : '',
+    pluginComplications.available() ? '<p>Choose a source for each slot, then optionally replace it with a plugin favorite. The source above is also used if that favorite is unavailable. Choosing None leaves the slot empty during fallback.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If favorites are unavailable, check plugin settings and reopen this page.</p>' : '',
     selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",
                 settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
-    pluginField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false),
+    pluginField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
     selectField(twoSlotRound ? "Detail 2" : "Top right", "complicationTopRight",
                 settings.ComplicationTopRight, COMPLICATION_OPTIONS),
-    pluginField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false),
+    pluginField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
     twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
       selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
                   COMPLICATION_OPTIONS),
-    pluginField("Bottom right", "BottomRight", settings, twoSlotRound),
+    pluginField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
     twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
       selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
                   COMPLICATION_OPTIONS),
-    pluginField("Bottom left", "BottomLeft", settings, twoSlotRound),
+    pluginField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -468,8 +475,11 @@ Pebble.addEventListener("showConfiguration", function() {
   // ignores); only chalk collapses to two center slots, gabbro keeps all four.
   var isRound = platform === "chalk" || platform === "gabbro";
   var twoSlotRound = platform === "chalk";
-  Pebble.openURL("data:text/html;charset=utf-8," +
-                 encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound, platform === "emery")));
+  pluginFavorites.load(Pebble, setTimeout, clearTimeout, function(favoriteLabels) {
+    Pebble.openURL("data:text/html;charset=utf-8," +
+      encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound,
+        platform === "emery", favoriteLabels)));
+  });
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {

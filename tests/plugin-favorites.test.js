@@ -1,0 +1,53 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const favorites = require('../src/pkjs/plugin-favorites');
+const entry = (category, item, property, index = 0) => ({ properties: {
+  category: { shortText: { text: category } }, item: { shortText: { text: item } },
+  property: { shortText: { text: property } }, index: { numericValue: { value: index } }
+} });
+
+test('favorite labels describe the configured binding without fetching its data', () => {
+  assert.deepEqual(favorites.labels([entry('weather', 'location', 'temperature'),
+    entry('phone', 'state', 'battery_percent', 1)]), [
+    'Favorite 1 — Weather / Location 1 / Temperature',
+    'Favorite 2 — Phone / State 2 / Battery Percent',
+    'Favorite 3 — Not configured', 'Favorite 4 — Not configured', 'Favorite 5 — Not configured'
+  ]);
+  assert.match(favorites.labels(null)[0], /Unavailable/);
+  assert.match(favorites.labels([{}])[0], /Unavailable/);
+});
+
+test('synchronous preference reply unsubscribes and completes exactly once', () => {
+  let stopped = 0, cleared = 0;
+  const results = [], requests = [];
+  favorites.load({ subscribeToSource(config) {
+    requests.push(config);
+    config.onData({ instances: [entry('weather', 'location', 'temperature')] });
+    config.onData({ instances: [] });
+    return { unsubscribe() { stopped++; } };
+  } }, () => 1, () => { cleared++; }, labels => results.push(labels));
+  assert.equal(stopped, 1); assert.equal(cleared, 1); assert.equal(results.length, 1);
+  assert.equal(requests.length, 1); assert.equal(requests[0].category, 'preferences');
+  assert.match(results[0][0], /Temperature/);
+});
+
+test('timeout opens usable settings and ignores late metadata callbacks', () => {
+  let timeout, request, stopped = 0;
+  const results = [];
+  favorites.load({ subscribeToSource(config) {
+    request = config; return { unsubscribe() { stopped++; } };
+  } }, (fn, delay) => { assert.equal(delay, 2000); timeout = fn; return 1; }, () => {},
+  labels => results.push(labels));
+  timeout(); request.onData({ instances: [] }); request.onError({});
+  assert.equal(stopped, 1); assert.equal(results.length, 1);
+  assert.match(results[0][0], /Unavailable/);
+});
+
+test('missing API, thrown errors and malformed payloads preserve unavailable status', () => {
+  for (const api of [{}, { subscribeToSource() { throw new Error('disabled'); } },
+    { subscribeToSource(config) { config.onData({}); return { unsubscribe() {} }; } }]) {
+    const results = [];
+    favorites.load(api, () => 1, () => {}, labels => results.push(labels));
+    assert.equal(results.length, 1); assert.match(results[0][0], /Unavailable/);
+  }
+});

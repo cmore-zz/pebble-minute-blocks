@@ -13,8 +13,8 @@ test('favorite labels describe the configured binding without fetching its data'
     'Favorite 2 — Phone / State 2 / Battery Percent',
     'Favorite 3 — Not configured', 'Favorite 4 — Not configured', 'Favorite 5 — Not configured'
   ]);
-  assert.match(favorites.labels(null)[0], /Unavailable/);
-  assert.match(favorites.labels([{}])[0], /Unavailable/);
+  assert.equal(favorites.labels(null)[0], 'Favorite 1');
+  assert.equal(favorites.labels([{}])[0], 'Favorite 1');
 });
 
 test('synchronous preference reply unsubscribes and completes exactly once', () => {
@@ -31,7 +31,7 @@ test('synchronous preference reply unsubscribes and completes exactly once', () 
   assert.match(results[0][0], /Temperature/);
 });
 
-test('timeout opens usable settings and ignores late metadata callbacks', () => {
+test('timeout returns unknown labels and ignores late metadata callbacks', () => {
   let timeout, request, stopped = 0;
   const results = [];
   favorites.load({ subscribeToSource(config) {
@@ -40,14 +40,14 @@ test('timeout opens usable settings and ignores late metadata callbacks', () => 
   labels => results.push(labels));
   timeout(); request.onData({ instances: [] }); request.onError({});
   assert.equal(stopped, 1); assert.equal(results.length, 1);
-  assert.match(results[0][0], /Unavailable/);
+  assert.equal(results[0][0], 'Favorite 1');
 });
 
-test('missing API, thrown errors and malformed payloads preserve unavailable status', () => {
+test('missing API, thrown errors and malformed payloads return neutral labels', () => {
   for (const api of [{}, { subscribeToSource() { throw new Error('disabled'); } },
     { subscribeToSource(config) { config.onData({}); return { unsubscribe() {} }; } }]) {
     const results = [];
     favorites.load(api, () => 1, () => {}, labels => results.push(labels));
-    assert.equal(results.length, 1); assert.match(results[0][0], /Unavailable/);
+    assert.equal(results.length, 1); assert.equal(results[0][0], 'Favorite 1');
   }
 });

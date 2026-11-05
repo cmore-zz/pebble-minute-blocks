@@ -385,7 +385,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    pluginComplications.available() ? '<p>Choose what each slot shows. Selecting a plugin favorite reveals a separate choice for what to show when it is unavailable.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If favorites are unavailable, check plugin settings and reopen this page.</p>' : '',
+    pluginComplications.available() ? '<p>Choose what each slot shows. Selecting a plugin favorite reveals a separate choice for what to show when it is unavailable.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. Labels refresh in the background; reopen this page to see updated names.</p>' : '',
     complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
     complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
     complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
@@ -475,6 +475,17 @@ Pebble.addEventListener("ready", function() {
   getWeather(settings);
 });
 
+var FAVORITE_LABELS_KEY = "pebble-minute-blocks-favorite-labels";
+var favoriteLabelsLoading = false;
+function cachedFavoriteLabels() {
+  try {
+    var labels = JSON.parse(localStorage.getItem(FAVORITE_LABELS_KEY));
+    if (Array.isArray(labels) && labels.length === 5 && labels.every(function(label) {
+      return typeof label === 'string' && label.length <= 256;
+    })) return labels;
+  } catch (e) { /* Missing or damaged cache must not prevent opening settings. */ }
+  return pluginFavorites.labels(null);
+}
 Pebble.addEventListener("showConfiguration", function() {
   var info = typeof Pebble.getActiveWatchInfo === "function" ? Pebble.getActiveWatchInfo() : {};
   var platform = info && info.platform ? info.platform : "";
@@ -483,10 +494,18 @@ Pebble.addEventListener("showConfiguration", function() {
   // ignores); only chalk collapses to two center slots, gabbro keeps all four.
   var isRound = platform === "chalk" || platform === "gabbro";
   var twoSlotRound = platform === "chalk";
-  pluginFavorites.load(Pebble, setTimeout, clearTimeout, function(favoriteLabels) {
-    Pebble.openURL("data:text/html;charset=utf-8," +
-      encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound,
-        platform === "emery", favoriteLabels)));
+  Pebble.openURL("data:text/html;charset=utf-8," +
+    encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound,
+      platform === "emery", cachedFavoriteLabels())));
+  // Refresh for the next opening without delaying or replacing the current page.
+  if (favoriteLabelsLoading) return;
+  favoriteLabelsLoading = true;
+  pluginFavorites.load(Pebble, setTimeout, clearTimeout, function(labels, known) {
+    favoriteLabelsLoading = false;
+    if (known) {
+      try { localStorage.setItem(FAVORITE_LABELS_KEY, JSON.stringify(labels)); }
+      catch (e) { /* Settings remain usable when storage is unavailable. */ }
+    }
   });
 });
 

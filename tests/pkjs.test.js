@@ -4,24 +4,26 @@ const vm = require('node:vm');
 const test = require('node:test');
 const source = fs.readFileSync('src/pkjs/index.js', 'utf8');
 
-function phone(platform = 'emery', saved, plugins = {}) {
+function phone(platform = 'emery', saved, plugins = {}, storage = new Map()) {
+  if (saved !== undefined) storage.set("pebble-minute-blocks-settings", saved);
   const events = {};
   const messages = [];
   const requests = [];
   let configUrl;
+  const opened = [];
   const timers = [];
   const context = vm.createContext({
     console: { log() {} },
     require: name => require('../src/pkjs/' + name.slice(2)),
     setTimeout: (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; },
     clearTimeout(timer) { timer.cancelled = true; },
-    localStorage: { getItem: () => saved, setItem() {} },
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     Pebble: {
       addEventListener: (name, callback) => { events[name] = callback; },
       sendAppMessage: (message, success) => { messages.push(message); if (success) success(); },
       ...plugins,
       getActiveWatchInfo: () => ({ platform }),
-      openURL: (url) => { configUrl = url; }
+      openURL: (url) => { configUrl = url; opened.push(url); }
     },
     navigator: { geolocation: {
       getCurrentPosition: (success) => success({ coords: { latitude: 40, longitude: -74 } })
@@ -33,10 +35,8 @@ function phone(platform = 'emery', saved, plugins = {}) {
     }
   });
   vm.runInContext(source, context);
-  return { context, events, messages, requests, html: () => {
-    timers.filter(t => t.delay === 2000 && !t.cancelled).forEach(t => { t.cancelled = true; t.fn(); });
-    return decodeURIComponent(configUrl.split(',')[1]);
-  } };
+  return { context, events, messages, requests, timers, opened, storage,
+    html: () => decodeURIComponent(configUrl.split(',')[1]) };
 }
 
 test('existing settings gain normal blocks without losing saved preferences', () => {
@@ -189,7 +189,7 @@ test('disabled or denied plugins retain built-in choices and saved favorites', (
   assert.equal(app.messages.at(-1).PluginTTL, 0);
   app.events.showConfiguration();
   assert.match(app.html(), /<h3>Top left<\/h3>/);
-  assert.match(app.html(), /Favorite 5 — Unavailable/);
+  assert.match(app.html(), /Favorite 5<\/option>/);
 });
 
 test('old settings pages preserve saved favorite choices', () => {
@@ -257,13 +257,14 @@ test('configuration shows named favorites safely and retains an unconfigured sav
     }
   });
   f.events.showConfiguration();
+  f.events.showConfiguration();
   const html = f.html();
   assert.match(html, />Show<\/label>/);
   assert.match(html, />When unavailable<\/label>/);
   assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
   assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
   assert.match(html, /Settings → Plugins → Complications/);
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
   assert.equal(requests[0].category, 'preferences');
   new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 });
@@ -310,4 +311,51 @@ test('Show switches between built-in and plugin while preserving an explicit fal
   assert.equal(saved.PluginFavoriteTopLeft, 5); assert.equal(saved.ComplicationTopLeft, 2);
   show.value = '0'; show.onchange(); fields.save.onclick();
   assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 0);
+});
+
+test('settings open immediately while asynchronous labels refresh for the next opening', () => {
+  const requests = [];
+  let stopped = 0;
+  const app = phone('emery', undefined, { subscribeToSource(request) {
+    assert.ok(app.opened.length > 0, 'page opens before subscription');
+    requests.push(request); return { unsubscribe() { stopped++; } };
+  } });
+  app.events.showConfiguration();
+  assert.equal(app.opened.length, 1);
+  assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+  app.events.showConfiguration();
+  assert.equal(requests.length, 1, 'concurrent openings share the pending refresh');
+  const text = value => ({ shortText: { text: value } });
+  requests[0].onData({ instances: [{ properties: { category: text('weather'),
+    item: text('location'), property: text('temperature'), index: { numericValue: { value: 0 } } } }] });
+  assert.equal(app.opened.length, 2, 'reply must not reopen the current page');
+  assert.equal(stopped, 1);
+  const restarted = phone('emery', undefined, { subscribeToSource(request) {
+    requests.push(request); return { unsubscribe() { stopped++; } };
+  } }, app.storage);
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/);
+  restarted.timers.find(t => t.delay === 2000).fn();
+  requests[1].onData({ instances: [] });
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/, 'timeout and late reply retain cache');
+  requests[2].onError({});
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/, 'errors retain cache');
+  requests[3].onData({ instances: [] });
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'successful empty list replaces cache');
+});
+
+test('invalid label cache and failed storage do not prevent opening settings', () => {
+  for (const cached of ['broken JSON', '{}', '[1,2,3,4,5]']) {
+    const storage = new Map([['pebble-minute-blocks-favorite-labels', cached]]);
+    const app = phone('emery', undefined, { subscribeToSource(request) {
+      request.onData({ instances: [] }); return { unsubscribe() {} };
+    } }, storage);
+    app.context.localStorage.setItem = () => { throw new Error('storage full'); };
+    app.events.showConfiguration();
+    assert.equal(app.opened.length, 1);
+    assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+  }
 });

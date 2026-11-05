@@ -165,6 +165,8 @@ confirm the exact size against the template on the portal's Appstore Assets page
 
 ## Publish Checklist
 
+- Release to both the Pebble Appstore and [Rebble](https://dev-portal.rebble.io/), and attach the PBW to the GitHub release.
+- For an existing Rebble listing, select Minute Blocks → New Release, enter the release notes, upload the same versioned PBW, and verify the published version.
 - Upload `build/pebble-minute-blocks.pbw`.
 - Upload at least one screenshot per supported platform collection (up to 5 each).
 - Lead with an animation GIF (`animations/`) as a screenshot on the color platforms.

@@ -380,10 +380,10 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
       selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
                   COMPLICATION_OPTIONS),
+    pluginField("Bottom right", "BottomRight", settings, twoSlotRound),
     twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
       selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
                   COMPLICATION_OPTIONS),
-    pluginField("Bottom right", "BottomRight", settings, twoSlotRound),
     pluginField("Bottom left", "BottomLeft", settings, twoSlotRound),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",

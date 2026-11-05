@@ -66,7 +66,7 @@ test('missing, malformed and expired readings fall back; lifetime is bounded', (
   sub.onData({ ...data(shortText('72F')), validUntilMs: now + 1e9 });
   assert.equal(f.sent.at(-1).PluginTTL, 900);
   f.subs[0].onData({ instances: [preference(), preference()] });
-  assert.equal(sub.stopped, true);
+  assert.equal(sub.stopped, false, 'unused favorites do not restart the active binding');
 });
 
 test('preference removal and settings changes cancel old callbacks', () => {
@@ -122,4 +122,143 @@ test('unavailable providers retry and old retry timers cannot revive changed cho
   manager.start({});
   timers[1]();
   assert.equal(subs.length, 2);
+});
+
+function liveFixture() {
+  let clock = now;
+  const subs = [], sent = [], timers = [];
+  const manager = support.create({ subscribeToSource(config) {
+    const sub = { ...config, stopped: false, unsubscribe() { this.stopped = true; } };
+    subs.push(sub); return sub;
+  } }, (message, key, options) => {
+    sent.push(message); options.onDelivered(message);
+  }, () => clock, (fn, delay) => {
+    const timer = { fn, delay, cancelled: false }; timers.push(timer); return timer;
+  }, timer => { timer.cancelled = true; });
+  return { manager, subs, sent, timers, advance(ms) { clock += ms; } };
+}
+
+test('acknowledged identical readings skip sends until renewal and null means unspecified expiry', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  const sub = f.subs[1];
+  sub.onData(data(shortText('72F')));
+  const count = f.sent.length;
+  sub.onData(data(shortText('72F')));
+  assert.equal(f.sent.length, count);
+  f.advance(280000);
+  sub.onData({ ...data(shortText('72F')), validUntilMs: now + 600000 });
+  assert.equal(f.sent.length, count + 1);
+  sub.onData({ ...data(shortText('72F')), validUntilMs: null });
+  assert.equal(f.sent.at(-1).PluginTTL, 60, 'shortened validity is not suppressed');
+});
+
+test('binding comparison ignores metadata and changes only the affected slot', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1, PluginFavoriteTopRight: 2 });
+  f.subs[0].onData({ instances: [preference(), preference()] });
+  const a = f.subs[1], b = f.subs[2], count = f.sent.length;
+  const decorated = preference(); decorated.properties.timestamp = shortText('new');
+  f.subs[0].onData({ instances: [decorated, preference()] });
+  assert.equal(f.subs.length, 3); assert.equal(f.sent.length, count);
+  f.subs[0].onData({ instances: [preference('humidity'), preference()] });
+  assert.equal(a.stopped, true); assert.equal(b.stopped, false);
+  const sent = f.sent.length;
+  a.onData(data(shortText('OLD'))); assert.equal(f.sent.length, sent);
+});
+
+test('denied source retries at 1, 5, 15 minutes then stops without disturbing healthy slots', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1, PluginFavoriteTopRight: 2 });
+  f.subs[0].onData({ instances: [preference(), preference()] });
+  const healthy = f.subs[2];
+  healthy.onData(data(shortText('73F')));
+  let broken = f.subs[1];
+  for (const delay of [60000, 300000, 900000]) {
+    broken.onError({ code: 'PERMISSION_DENIED' });
+    const timer = f.timers.at(-1); assert.equal(timer.delay, delay);
+    timer.fn(); broken = f.subs.at(-1);
+    assert.equal(healthy.stopped, false); assert.equal(f.subs[0].stopped, false);
+  }
+  broken.onError({ code: 'PERMISSION_DENIED' });
+  assert.equal(f.timers.length, 3);
+  broken.onData(data(shortText('72F')));
+  assert.equal(f.sent.at(-1).PluginText, '72F', 'grant recovers existing subscription after retry cap');
+});
+
+test('spontaneous recovery cancels pending retry and late callbacks cannot restart it', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  f.subs[1].onError({}); const timer = f.timers[0];
+  f.subs[1].onData(data(shortText('72F')));
+  assert.equal(timer.cancelled, true); timer.fn(); assert.equal(f.subs.length, 2);
+});
+
+test('queue recomputes expiry on initial dispatch and every retry', () => {
+  let clock = now;
+  const calls = [], timers = [];
+  const send = queue({ sendAppMessage(message, ok, fail) { calls.push({ message, ok, fail }); } },
+    fn => timers.push(fn), () => clock);
+  send({ setting: 1 }, 'settings');
+  send({ PluginText: '72F', PluginTTL: 1 }, 'plugin-0', { expiresAt: now + 1000 });
+  clock += 2000; calls[0].ok();
+  assert.equal(calls[1].message.PluginTTL, 0); assert.equal(calls[1].message.PluginText, '');
+  calls[1].ok();
+  send({ PluginText: '73F', PluginTTL: 2 }, 'plugin-0', { expiresAt: clock + 2000 });
+  calls[2].fail(); clock += 3000; timers.shift()();
+  assert.equal(calls[3].message.PluginTTL, 0); assert.equal(calls[3].message.PluginText, '');
+});
+
+test('lost plugin settings recover independently and superseded retry cannot restore old choices', () => {
+  const calls = [], timers = [];
+  const send = queue({ sendAppMessage(message, ok, fail) { calls.push({ message, ok, fail }); } },
+    (fn, delay) => timers.push({ fn, delay }));
+  send({ PluginFavoriteTopLeft: 1 }, 'plugin-settings');
+  calls.at(-1).fail(); timers.shift().fn();
+  calls.at(-1).fail(); timers.shift().fn();
+  calls.at(-1).fail();
+  const recovery = timers.shift(); assert.equal(recovery.delay, 60000);
+  send({ unrelated: 1 }, 'weather'); calls.at(-1).ok();
+  recovery.fn(); assert.equal(calls.at(-1).message.PluginFavoriteTopLeft, 1);
+  calls.at(-1).fail();
+  const stale = timers.shift();
+  send({ PluginFavoriteTopLeft: 0 }, 'plugin-settings'); calls.at(-1).ok();
+  const count = calls.length; stale.fn(); assert.equal(calls.length, count);
+});
+
+test('plugin readings wait for settings acknowledgement, expire while waiting, and do not block weather', () => {
+  let clock = now;
+  const calls = [], timers = [];
+  const send = queue({ sendAppMessage(message, ok, fail) { calls.push({ message, ok, fail }); } },
+    fn => timers.push(fn), () => clock);
+  send({ PluginFavoriteTopLeft: 1 }, 'plugin-settings');
+  send({ PluginText: '72F', PluginTTL: 10 }, 'plugin-0', { expiresAt: now + 10000 });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    calls.at(-1).fail();
+    if (attempt < 2) timers.shift()();
+  }
+  assert.equal(calls.length, 3);
+  send({ WeatherTemp: 72 }, 'weather');
+  assert.equal(calls.at(-1).message.WeatherTemp, 72); calls.at(-1).ok();
+  clock += 60000; timers.shift()();
+  assert.equal(calls.at(-1).message.PluginFavoriteTopLeft, 1);
+  calls.at(-1).ok();
+  assert.equal(calls.at(-1).message.PluginTTL, 0);
+  assert.equal(calls.at(-1).message.PluginText, '');
+});
+
+test('late delivery acknowledgements cannot suppress a newer recovery reading', () => {
+  const subs = [], sent = [];
+  const manager = support.create({ subscribeToSource(config) {
+    subs.push(config); return { unsubscribe() {} };
+  } }, (message, key, options) => sent.push({ message, options }), () => now);
+  manager.start({ PluginFavoriteTopLeft: 1 });
+  sent[0].options.onDelivered(sent[0].message);
+  subs[0].onData({ instances: [preference()] });
+  subs[1].onData(data(shortText('72F')));
+  const older = sent.at(-1);
+  subs[1].onError({});
+  older.options.onDelivered(older.message);
+  const count = sent.length;
+  subs[1].onData(data(shortText('72F')));
+  assert.equal(sent.length, count + 1);
+  assert.equal(sent.at(-1).message.PluginText, '72F');
 });

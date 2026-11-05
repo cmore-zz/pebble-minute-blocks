@@ -94,18 +94,27 @@ layout and collision code as built-ins. Text is limited to seven printable ASCII
 characters; degree signs are removed, dashes normalized, numbers rounded to one
 decimal, and unsupported characters omitted. Oversized readings fall back rather
 than cutting digits off a number. Images, series, timestamps and actions
-are not supported in this first version.
+are not supported in this first version. On rectangular watches, opposing plugin
+readings that overlap another slot fall back to their built-in readings, keeping
+text size unchanged. Actual ink bounds determine whether they fit.
 
 Missing APIs, disabled plugins, denied permissions, missing favorites, unsupported
 shapes and source errors leave built-ins working. A source error clears its live
-reading and retries after a minute; later source updates can also recover it.
+reading and retries only that subscription after 1, 5, and 15 minutes, then stops
+retrying until the next settings/session refresh. Later source updates can still
+recover it, including after a permission grant. Unrelated slots keep running.
 Readings expire at the provider's validity limit, capped at 15 minutes (one minute
-when no validity limit is supplied), and fall back on the next redraw, normally
+when the validity limit is omitted or null), and fall back on the next redraw, normally
 within a minute. Live readings are not persisted. Favorite choices are retained
 when using an older companion app, whose settings page hides the plugin controls.
 
 Settings and live values use separate bounded dictionaries, serialized through a
-single AppMessage queue with coalescing and limited retries. Changing settings
+single AppMessage queue with coalescing. The queue recomputes remaining lifetime
+at every send and retry, clearing values that expired while waiting. Failed
+plugin settings retry after 1 and 5 minutes, then every 15 minutes until delivered
+or replaced; plugin readings wait for settings acknowledgement while other
+traffic continues. Identical acknowledged readings are skipped until renewal is
+needed, and extending an unchanged watch reading does not force a redraw. Changing settings
 unsubscribes old sources and ignores their late callbacks. Only favorite choices,
 not live values, write to watch persistence.
 

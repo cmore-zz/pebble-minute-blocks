@@ -206,3 +206,12 @@ test('plugin controls use two slots on chalk and four elsewhere', () => {
     new vm.Script(app.html().match(/<script>([\s\S]*)<\/script>/)[1]);
   }
 });
+
+test('each plugin selector follows its own built-in selector', () => {
+  const f = phone('aplite', undefined, { subscribeToSource() { return { unsubscribe() {} }; } });
+  f.events.showConfiguration();
+  const html = f.html();
+  assert.ok(html.indexOf('id="complicationBottomRight"') < html.indexOf('id="PluginFavoriteBottomRight"'));
+  assert.ok(html.indexOf('id="PluginFavoriteBottomRight"') < html.indexOf('id="complicationBottomLeft"'));
+  assert.ok(html.indexOf('id="complicationBottomLeft"') < html.indexOf('id="PluginFavoriteBottomLeft"'));
+});

@@ -28,97 +28,112 @@ function favorite(settings, slot) {
 }
 
 function create(Pebble, send, now, schedule, cancel) {
-  var retryTimer;
-  var epoch = 0;
-  var preferenceEpoch = 0;
-  var preferenceSubscription;
-  var dataSubscriptions = [];
-  var selections = [];
-  var bindingSignature;
-  function stopData() {
-    epoch++;
-    dataSubscriptions.forEach(function(sub) { if (sub) sub.unsubscribe(); });
-    dataSubscriptions = [];
+  var selections = [], slots = [], preferences, session = 0;
+  var delivered = [], revisions = [];
+  var delays = [60000, 300000, 900000];
+  function stop(state) {
+    if (!state) return;
+    state.active = false;
+    if (state.timer != null && cancel) cancel(state.timer);
+    if (state.sub) state.sub.unsubscribe();
+  }
+  // Errors do not end SDK subscriptions. Keep listening for recovery, while
+  // retrying only this source a bounded number of times if it stays broken.
+  function subscribe(options, onData, onError) {
+    var state = { active: true, attempts: 0, timer: null, generation: 0 };
+    function recovered() {
+      if (state.timer != null && cancel) cancel(state.timer);
+      state.timer = null;
+      state.attempts = 0;
+    }
+    function connect() {
+      var generation = ++state.generation;
+      if (state.sub) state.sub.unsubscribe();
+      state.sub = null;
+      function current() { return state.active && generation === state.generation; }
+      function failed() {
+        if (!current()) return;
+        onError();
+        if (!schedule || state.timer != null || state.attempts >= delays.length) return;
+        var attempt = ++state.attempts;
+        state.timer = schedule(function() {
+          if (!current() || state.timer == null || state.attempts !== attempt) return;
+          state.timer = null;
+          connect();
+        }, delays[attempt - 1]);
+      }
+      var config = {};
+      Object.keys(options).forEach(function(key) { config[key] = options[key]; });
+      config.onData = function(data) { if (current()) { recovered(); onData(data); } };
+      config.onError = failed;
+      try { state.sub = Pebble.subscribeToSource(config); } catch (e) { failed(); }
+    }
+    connect();
+    return state;
   }
   function publish(slot, text, ttl) {
+    if (ttl <= 0) text = '';
+    var previous = delivered[slot];
+    var expires = now() + ttl * 1000, generation = session;
+    if (previous && previous.text === text && (!text ||
+        (previous.expires <= expires && previous.expires - now() > 30000))) return;
+    var revision = (revisions[slot] || 0) + 1;
+    revisions[slot] = revision; delivered[slot] = null;
     send({ PluginSlot: slot, PluginFavorite: selections[slot], PluginText: text,
-      PluginTTL: ttl }, 'plugin-' + slot);
+      PluginTTL: ttl }, 'plugin-' + slot, {
+      expiresAt: expires,
+      onDelivered: function(message) {
+        if (generation === session && revisions[slot] === revision) delivered[slot] = {
+          text: message.PluginText, expires: expires
+        };
+      }
+    });
   }
-  function clear() {
-    selections.forEach(function(value, slot) { if (value) publish(slot, '', 0); });
+  function binding(entry) {
+    var p = entry && entry.properties;
+    function text(key) { return p && p[key] && p[key].shortText && p[key].shortText.text; }
+    var result = [text('category'), text('item'), text('property'),
+      p && p.index && p.index.numericValue && p.index.numericValue.value];
+    if (!result.slice(0, 3).every(function(s) {
+      return typeof s === 'string' && s.length > 0 && s.length <= 128;
+    }) || typeof result[3] !== 'number' || result[3] < 0 || result[3] % 1 !== 0) return null;
+    return result;
+  }
+  function update(entries) {
+    selections.forEach(function(selected, slot) {
+      var target = selected ? binding(entries[selected - 1]) : null;
+      var signature = JSON.stringify(target);
+      if (slots[slot] && slots[slot].signature === signature) return;
+      if (slots[slot]) stop(slots[slot].subscription);
+      slots[slot] = { signature: signature };
+      if (!selected) return;
+      publish(slot, '', 0);
+      if (!target) return;
+      slots[slot].subscription = subscribe({ category: target[0], item: target[1],
+        properties: [target[2]], maxStalenessMs: 60000 }, function(data) {
+        var instance = data && Array.isArray(data.instances) && data.instances[target[3]];
+        var text = textFor(instance && instance.properties && instance.properties[target[2]]);
+        var expires = data && data.validUntilMs;
+        var ttl = typeof expires === 'number' && isFinite(expires) ?
+          Math.max(0, Math.min(MAX_AGE_SEC, Math.floor((expires - now()) / 1000))) :
+          expires == null ? 60 : 0;
+        publish(slot, text, text ? ttl : 0);
+      }, function() { publish(slot, '', 0); });
+    });
   }
   function available() { return typeof Pebble.subscribeToSource === 'function'; }
   function start(settings) {
-    var session = ++preferenceEpoch;
-    if (retryTimer && cancel) cancel(retryTimer);
-    retryTimer = null;
-    function retry() {
-      if (!schedule || retryTimer) return;
-      retryTimer = schedule(function() {
-        retryTimer = null;
-        if (session === preferenceEpoch) start(settings);
-      }, 60000);
-    }
-    if (preferenceSubscription) preferenceSubscription.unsubscribe();
-    preferenceSubscription = null;
-    stopData();
-    bindingSignature = null;
+    session++;
+    stop(preferences);
+    slots.forEach(function(slot) { stop(slot.subscription); });
+    slots = []; delivered = [];
     selections = SLOT_KEYS.map(function(_, slot) { return favorite(settings, slot); });
-    clear();
+    selections.forEach(function(value, slot) { if (value) publish(slot, '', 0); });
     if (!available() || !selections.some(function(value) { return value > 0; })) return;
-    try {
-      preferenceSubscription = Pebble.subscribeToSource({
-        category: 'preferences', item: 'complications', maxStalenessMs: 60000,
-        onData: function(envelope) {
-          if (session !== preferenceEpoch) return;
-          var entries = envelope && Array.isArray(envelope.instances) ? envelope.instances : [];
-          var signature = JSON.stringify(entries);
-          if (signature === bindingSignature) return;
-          bindingSignature = signature;
-          stopData();
-          clear();
-          var generation = epoch;
-          selections.forEach(function(selected, slot) {
-            if (!selected) return;
-            var p = entries[selected - 1] && entries[selected - 1].properties;
-            var category = p && p.category && p.category.shortText && p.category.shortText.text;
-            var item = p && p.item && p.item.shortText && p.item.shortText.text;
-            var property = p && p.property && p.property.shortText && p.property.shortText.text;
-            var index = p && p.index && p.index.numericValue && p.index.numericValue.value;
-            if (![category, item, property].every(function(s) {
-              return typeof s === 'string' && s.length > 0 && s.length <= 128;
-            }) || typeof index !== 'number' || index < 0 || index % 1 !== 0) return;
-            try {
-              var sub = Pebble.subscribeToSource({
-                category: category, item: item, properties: [property], maxStalenessMs: 60000,
-                onData: function(data) {
-                  if (generation !== epoch) return;
-                  var instance = data && Array.isArray(data.instances) && data.instances[index];
-                  var value = instance && instance.properties && instance.properties[property];
-                  var text = textFor(value);
-                  var expires = data && data.validUntilMs;
-                  var ttl = typeof expires === 'number' && isFinite(expires) ?
-                    Math.max(0, Math.min(MAX_AGE_SEC, Math.floor((expires - now()) / 1000))) :
-                    expires === undefined ? 60 : 0;
-                  publish(slot, text, text ? ttl : 0);
-                },
-                onError: function() {
-                  if (generation === epoch) { publish(slot, '', 0); retry(); }
-                }
-              });
-              dataSubscriptions.push(sub);
-            } catch (e) { publish(slot, '', 0); retry(); }
-          });
-        },
-        onError: function() {
-          if (session !== preferenceEpoch) return;
-          stopData(); bindingSignature = null; clear(); retry();
-        }
-      });
-    } catch (e) { clear(); retry(); }
+    preferences = subscribe({ category: 'preferences', item: 'complications', maxStalenessMs: 60000 },
+      function(envelope) { update(envelope && Array.isArray(envelope.instances) ? envelope.instances : []); },
+      function() { update([]); });
   }
-  // A preferences update replaces data subscriptions but belongs to the same
-  // preferences session. A settings change invalidates both kinds of callback.
   return { available: available, start: start };
 }
 

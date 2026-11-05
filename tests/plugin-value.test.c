@@ -27,5 +27,28 @@ int main(void) {
   assert(!plugin_reading_set(&reading, 1, "bad\n", 60, now));
   assert(!plugin_reading_set(&reading, 1, "x", 901, now));
   assert(!plugin_reading_set(&reading, 1, "x", -1, now));
+  PluginReading before;
+  assert(plugin_reading_set(&reading, 1, "72F", 60, now));
+  before = reading;
+  assert(plugin_reading_set(&reading, 1, "72F", 120, now));
+  assert(!plugin_reading_display_changed(&before, &reading, now));
+  assert(plugin_reading_display_changed(&before, &reading, now + 70));
+  before = reading;
+  assert(plugin_reading_set(&reading, 1, "73F", 120, now));
+  assert(plugin_reading_display_changed(&before, &reading, now));
+  before = reading;
+  assert(plugin_reading_set(&reading, 1, "", 0, now));
+  assert(plugin_reading_display_changed(&before, &reading, now));
+  ComplicationRect regions[] = {{4, 0, 78, 20}, {62, 0, 78, 20}, {4, 140, 30, 20}};
+  uint8_t slots[] = {0, 1, 3};
+  assert(plugin_overlap_mask(regions, slots, 3, 3) == 3);
+  assert(plugin_overlap_mask(regions, slots, 3, 1) == 1); // plugin vs built-in
+  assert(plugin_overlap_mask(regions, slots, 3, 0) == 0);
+  regions[1].x = 83; // Exactly one pixel between the ink bounds fits.
+  assert(plugin_overlap_mask(regions, slots, 3, 3) == 0);
+  regions[1].x = 82;
+  assert(plugin_overlap_mask(regions, slots, 3, 3) == 3);
+  slots[1] = 0; // stacked lines within a slot don't conflict
+  assert(plugin_overlap_mask(regions, slots, 3, 3) == 0);
   puts("Plugin reading validation, expiry and built-in fallback checks passed.");
 }

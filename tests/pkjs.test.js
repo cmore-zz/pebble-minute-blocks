@@ -36,7 +36,10 @@ function phone(platform = 'emery', saved, plugins = {}, storage = new Map()) {
   });
   vm.runInContext(source, context);
   return { context, events, messages, requests, timers, opened, storage,
-    html: () => decodeURIComponent(configUrl.split(',')[1]) };
+    html: () => {
+      timers.filter(t => t.delay === 750 && !t.cancelled).forEach(t => { t.cancelled = true; t.fn(); });
+      return decodeURIComponent(configUrl.split(',')[1]);
+    } };
 }
 
 test('existing settings gain normal blocks without losing saved preferences', () => {
@@ -257,14 +260,13 @@ test('configuration shows named favorites safely and retains an unconfigured sav
     }
   });
   f.events.showConfiguration();
-  f.events.showConfiguration();
   const html = f.html();
   assert.match(html, />Show<\/label>/);
   assert.match(html, />When unavailable<\/label>/);
   assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
   assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
   assert.match(html, /Settings → Plugins → Complications/);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
   assert.equal(requests[0].category, 'preferences');
   new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
 });
@@ -313,49 +315,66 @@ test('Show switches between built-in and plugin while preserving an explicit fal
   assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 0);
 });
 
-test('settings open immediately while asynchronous labels refresh for the next opening', () => {
+test('async lookup shows fresh names on the first opening and bounds slow lookups', () => {
   const requests = [];
   let stopped = 0;
   const app = phone('emery', undefined, { subscribeToSource(request) {
-    assert.ok(app.opened.length > 0, 'page opens before subscription');
     requests.push(request); return { unsubscribe() { stopped++; } };
   } });
+  const envelope = property => {
+    const text = value => ({ shortText: { text: value } });
+    return { instances: [{ properties: { category: text('weather'), item: text('location'),
+      property: text(property), index: { numericValue: { value: 0 } } } }] };
+  };
   app.events.showConfiguration();
+  assert.equal(app.opened.length, 0);
+  assert.equal(app.timers[0].delay, 750);
+  app.events.showConfiguration();
+  assert.equal(requests.length, 1, 'concurrent openings share the pending lookup');
+  requests[0].onData(envelope('temperature'));
   assert.equal(app.opened.length, 1);
-  assert.match(app.html(), /value="101">Favorite 1<\/option>/);
-  app.events.showConfiguration();
-  assert.equal(requests.length, 1, 'concurrent openings share the pending refresh');
-  const text = value => ({ shortText: { text: value } });
-  requests[0].onData({ instances: [{ properties: { category: text('weather'),
-    item: text('location'), property: text('temperature'), index: { numericValue: { value: 0 } } } }] });
-  assert.equal(app.opened.length, 2, 'reply must not reopen the current page');
+  assert.match(app.html(), /Favorite 1 — Weather \/ Location 1 \/ Temperature/);
   assert.equal(stopped, 1);
+  // Fresh data must replace cached names in this opening, including after restart.
   const restarted = phone('emery', undefined, { subscribeToSource(request) {
     requests.push(request); return { unsubscribe() { stopped++; } };
   } }, app.storage);
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Weather/);
-  restarted.timers.find(t => t.delay === 2000).fn();
-  requests[1].onData({ instances: [] });
+  requests[1].onData(envelope('humidity'));
+  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/);
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Weather/, 'timeout and late reply retain cache');
-  requests[2].onError({});
+  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'timeout uses cache');
+  const opens = restarted.opened.length;
+  requests[2].onData({ instances: [] });
+  assert.equal(restarted.opened.length, opens, 'late reply cannot reopen settings');
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Weather/, 'errors retain cache');
-  requests[3].onData({ instances: [] });
+  requests[3].onError({});
+  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'errors retain cache');
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'successful empty list replaces cache');
+  requests[4].onData({ instances: [] });
+  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'empty list replaces cache immediately');
 });
 
-test('invalid label cache and failed storage do not prevent opening settings', () => {
-  for (const cached of ['broken JSON', '{}', '[1,2,3,4,5]']) {
+test('unknown or invalid cache uses neutral names when the live lookup fails', () => {
+  for (const cached of [undefined, 'broken JSON', '{}', '[1,2,3,4,5]']) {
     const storage = new Map([['pebble-minute-blocks-favorite-labels', cached]]);
-    const app = phone('emery', undefined, { subscribeToSource(request) {
-      request.onData({ instances: [] }); return { unsubscribe() {} };
+    const app = phone('emery', undefined, { subscribeToSource() {
+      return { unsubscribe() {} };
     } }, storage);
-    app.context.localStorage.setItem = () => { throw new Error('storage full'); };
     app.events.showConfiguration();
-    assert.equal(app.opened.length, 1);
+    assert.equal(app.opened.length, 0);
     assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+    assert.equal(app.opened.length, 1);
   }
+});
+
+test('fresh labels display even when cache storage fails', () => {
+  const app = phone('emery', undefined, { subscribeToSource(request) {
+    request.onData({ instances: [{}] }); return { unsubscribe() {} };
+  } });
+  app.context.localStorage.setItem = () => { throw new Error('storage full'); };
+  app.events.showConfiguration();
+  assert.equal(app.opened.length, 1);
+  assert.match(app.html(), /Favorite 1 — Unavailable/);
+  assert.match(app.html(), /Favorite 2 — Not configured/);
 });

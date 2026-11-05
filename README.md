@@ -88,9 +88,10 @@ app's preferred-complication list. Choose favorites in the Pebble app and select
 one in Minute Blocks' settings. Favorite labels identify the configured category,
 instance number and property (for example, Weather / Location 1 / Temperature).
 Empty favorites show Not configured; unknown details show plain Favorite 1–5 names.
-Settings open immediately using cached labels, then refresh only the favorites list
-in the background with a two-second timeout, without requesting readings themselves.
-Reopen settings to see updated names; failed lookups preserve previously cached labels. Each slot has one Show selector
+Opening settings reads current favorite names with a 750 ms timeout, without
+requesting the readings themselves. Slow or failed lookups use previously cached
+names, or plain Favorite 1–5 names if none are known. Successful lookups show fresh
+names on that same opening and cache them for later. Malformed bindings show Unavailable. Each slot has one Show selector
 containing ordinary sources and plugin favorites. Choosing a plugin reveals a
 When unavailable selector for its ordinary fallback; choosing an ordinary source
 hides that fallback control and disables the plugin for that slot;

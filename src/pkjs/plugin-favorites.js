@@ -12,7 +12,7 @@ function labels(entries) {
     var target = entries && binding(entries[i]);
     var description = !entries ? '' : !entries[i] ? 'Not configured' :
       target ? readable(target[0]) + ' / ' + readable(target[1]) + ' ' + (target[3] + 1) +
-        ' / ' + readable(target[2]) : '';
+        ' / ' + readable(target[2]) : 'Unavailable';
     result.push('Favorite ' + (i + 1) + (description ? ' — ' + description : ''));
   }
   return result;
@@ -27,7 +27,7 @@ function load(Pebble, schedule, cancel, callback) {
     callback(labels(entries), entries !== null);
   }
   if (typeof Pebble.subscribeToSource !== 'function') { finish(null); return; }
-  timer = schedule(function() { finish(null); }, 2000);
+  timer = schedule(function() { finish(null); }, 750);
   try {
     subscription = Pebble.subscribeToSource({ category: 'preferences', item: 'complications',
       onData: function(envelope) {

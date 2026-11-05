@@ -271,10 +271,13 @@ test('an early expiry extension is delivered without depending on another provid
   f.subs[1].onData(envelope(now + 120000));
   const count = f.sent.length;
   f.subs[1].onData(envelope(now + 600000));
+  assert.equal(f.sent.length, count);
+  const renewal = f.timers.at(-1);
+  assert.equal(renewal.delay, 90000);
+  f.advance(90000); renewal.fn(); // No further provider callback.
   assert.equal(f.sent.length, count + 1);
-  assert.equal(f.sent.at(-1).PluginTTL, 600);
-  f.advance(121000); // No more provider callbacks: the watch already has the extension.
-  assert.equal(f.sent.at(-1).PluginTTL, 600);
+  assert.equal(f.sent.at(-1).PluginTTL, 510); // Original deadline, not another 600 seconds.
+  assert.equal(f.timers.length, 1, 'no renewal without another observed extension');
 });
 
 test('unchanged starts preserve healthy subscriptions and pending failure recovery', () => {
@@ -308,4 +311,74 @@ test('preferences recover after the fast retry budget with weather disabled', ()
   f.manager.start({});
   const count = f.subs.length;
   late.fn(); assert.equal(f.subs.length, count);
+});
+
+
+test('rolling extensions share one renewal timer and use the latest observed deadline', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  const sub = f.subs[1]; sub.onData(data(shortText('72F')));
+  const count = f.sent.length;
+  for (let second = 1; second <= 100; second++) {
+    f.advance(1000);
+    sub.onData({ ...data(shortText('72F')), validUntilMs: now + 300000 + second * 1000 });
+  }
+  assert.equal(f.sent.length, count);
+  assert.equal(f.timers.length, 1);
+  f.advance(170000); f.timers[0].fn();
+  assert.equal(f.sent.at(-1).PluginTTL, 130);
+  assert.equal(f.sent.length, count + 1);
+});
+
+test('omitted validity coalesces frequent updates without inventing a longer lifetime', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  const reading = { ...data(shortText('72F')), validUntilMs: undefined };
+  f.subs[1].onData(reading);
+  const count = f.sent.length;
+  f.advance(10000); f.subs[1].onData(reading);
+  f.advance(10000); f.subs[1].onData(reading);
+  assert.equal(f.sent.length, count); assert.equal(f.timers.length, 1);
+  f.advance(10000); f.timers[0].fn();
+  assert.equal(f.sent.at(-1).PluginTTL, 50); // Latest update at t=20 expires at t=80.
+});
+
+test('shorter validity and changed text cancel a pending extension immediately', () => {
+  for (const [text, expiry] of [['72F', now + 40000], ['73F', now + 600000]]) {
+    const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+    f.subs[0].onData({ instances: [preference()] });
+    f.subs[1].onData(data(shortText('72F')));
+    f.subs[1].onData({ ...data(shortText('72F')), validUntilMs: now + 600000 });
+    const timer = f.timers[0];
+    f.subs[1].onData({ ...data(shortText(text)), validUntilMs: expiry });
+    assert.equal(timer.cancelled, true);
+    assert.equal(f.sent.at(-1).PluginText, text);
+    assert.equal(f.sent.at(-1).PluginTTL, (expiry - now) / 1000);
+    const count = f.sent.length; timer.fn(); assert.equal(f.sent.length, count);
+  }
+});
+
+test('errors, binding removal and settings changes invalidate queued renewal callbacks', () => {
+  for (const change of ['error', 'binding', 'settings']) {
+    const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+    f.subs[0].onData({ instances: [preference()] });
+    f.subs[1].onData(data(shortText('72F')));
+    f.subs[1].onData({ ...data(shortText('72F')), validUntilMs: now + 600000 });
+    const timer = f.timers[0];
+    if (change === 'error') f.subs[1].onError({});
+    else if (change === 'binding') f.subs[0].onData({ instances: [] });
+    else f.manager.start({});
+    assert.equal(timer.cancelled, true);
+    const count = f.sent.length; f.advance(300000); timer.fn();
+    assert.equal(f.sent.length, count);
+  }
+});
+
+test('a delayed renewal clears an already expired reading instead of reviving it', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  f.subs[1].onData(data(shortText('72F')));
+  f.subs[1].onData({ ...data(shortText('72F')), validUntilMs: now + 600000 });
+  f.advance(601000); f.timers[0].fn();
+  assert.equal(f.sent.at(-1).PluginText, ''); assert.equal(f.sent.at(-1).PluginTTL, 0);
 });

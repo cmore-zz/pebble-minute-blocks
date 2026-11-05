@@ -116,8 +116,13 @@ at every send and retry, clearing values that expired while waiting. Failed
 plugin settings retry after 1 and 5 minutes, then every 15 minutes until delivered
 or replaced; plugin readings wait for settings acknowledgement while other
 traffic continues. Acknowledged readings with identical text and expiry are
-skipped; changed expiry times are always delivered even if the text is unchanged.
-Extending an unchanged watch reading does not force a redraw. Changing favorite
+skipped. For unchanged text with extended validity, one timer per slot retains
+the latest observed deadline and renews about 30 seconds before the acknowledged
+reading expires, even if the provider sends no further update. Shortened validity
+and changed text send immediately. Delayed timers cannot extend the provider
+deadline; errors, removed bindings and changed favorites cancel pending renewals.
+Short-lived readings still need frequent renewal. Extending an unchanged watch
+reading does not force a redraw. Changing favorite
 choices unsubscribes old sources and ignores their late callbacks. Only favorite choices,
 not live values, write to watch persistence.
 

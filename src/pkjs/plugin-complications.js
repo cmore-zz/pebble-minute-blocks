@@ -29,7 +29,7 @@ function favorite(settings, slot) {
 
 function create(Pebble, send, now, schedule, cancel) {
   var selections = [], slots = [], preferences, session = 0, apiAvailable;
-  var delivered = [], revisions = [];
+  var delivered = [], revisions = [], renewals = [];
   var delays = [60000, 300000, 900000];
   function stop(state) {
     if (!state) return;
@@ -72,13 +72,39 @@ function create(Pebble, send, now, schedule, cancel) {
     connect();
     return state;
   }
+  function cancelRenewal(slot) {
+    var renewal = renewals[slot];
+    if (renewal && cancel) cancel(renewal.timer);
+    renewals[slot] = null;
+  }
   function publish(slot, text, ttl, deadline) {
     if (ttl <= 0) text = '';
     var previous = delivered[slot];
     var expires = deadline === undefined ? now() + ttl * 1000 : deadline;
     var generation = session;
-    // A changed deadline must reach the watch even if text is unchanged; the
-    // provider may never send another callback before the old deadline.
+    // Coalesce extensions until the acknowledged lifetime is nearly over.
+    // Retain the latest absolute deadline: a quiet provider must still renew,
+    // and firing the timer must never grant a fresh lifetime to old data.
+    if (schedule && previous && text && previous.text === text &&
+        expires > previous.expires && previous.expires - now() > 30000) {
+      var renewal = renewals[slot];
+      if (renewal && renewal.base === previous.expires) {
+        renewal.expires = expires;
+        return;
+      }
+      cancelRenewal(slot);
+      renewal = { base: previous.expires, expires: expires };
+      renewals[slot] = renewal;
+      renewal.timer = schedule(function() {
+        if (generation !== session || renewals[slot] !== renewal) return;
+        renewals[slot] = null;
+        var remaining = Math.max(0, Math.floor((renewal.expires - now()) / 1000));
+        publish(slot, text, remaining, renewal.expires);
+      }, previous.expires - now() - 30000);
+      return;
+    }
+    // Changes, shortened validity, failures and removals supersede a renewal.
+    cancelRenewal(slot);
     if (previous && previous.text === text && (!text || previous.expires === expires)) return;
     var revision = (revisions[slot] || 0) + 1;
     revisions[slot] = revision; delivered[slot] = null;
@@ -137,6 +163,7 @@ function create(Pebble, send, now, schedule, cancel) {
     })) return;
     apiAvailable = supported;
     session++;
+    renewals.forEach(function(_, slot) { cancelRenewal(slot); });
     stop(preferences);
     slots.forEach(function(slot) { stop(slot.subscription); });
     slots = []; delivered = [];

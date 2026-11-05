@@ -134,6 +134,39 @@ int main(void) {
   assert(value.suffix[0] == '\0');
   assert(strcmp(value.text, "--") == 0);
 
+  // Different padding and unused string bytes must not invalidate the cache.
+  ComplicationValue a, b;
+  memset(&a, 0xaa, sizeof(a));
+  memset(&b, 0xbb, sizeof(b));
+  a.display = b.display = ComplicationDisplayText;
+  a.available = b.available = true;
+  strcpy(a.text, "BT"); strcpy(b.text, "BT");
+  a.detail[0] = b.detail[0] = '\0';
+  a.suffix[0] = b.suffix[0] = '\0';
+  for (int i = 0; i < 3; i++) a.widths[i] = b.widths[i] = 40 + i;
+  assert(memcmp(&a, &b, sizeof(a)) != 0);
+  assert(complication_values_equal(&a, &b, 1));
+  b.available = false;
+  assert(!complication_values_equal(&a, &b, 1));
+  b.available = true;
+  b.display = ComplicationDisplayNumber;
+  assert(!complication_values_equal(&a, &b, 1));
+  b.display = ComplicationDisplayText;
+  strcpy(b.text, "--");
+  assert(!complication_values_equal(&a, &b, 1));
+  strcpy(b.text, "BT");
+  strcpy(b.detail, "day");
+  assert(!complication_values_equal(&a, &b, 1));
+  b.detail[0] = '\0';
+  strcpy(b.suffix, "%");
+  assert(!complication_values_equal(&a, &b, 1));
+  b.suffix[0] = '\0';
+  for (int i = 0; i < 3; i++) {
+    b.widths[i]++;
+    assert(!complication_values_equal(&a, &b, 1));
+    b.widths[i]--;
+  }
+
   puts("Complication values, placeholders, and formatting checks passed.");
   return 0;
 }

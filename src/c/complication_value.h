@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "weather_cache.h"
@@ -36,6 +37,22 @@ typedef struct {
   char suffix[2];
   int16_t widths[3]; // normal, medium, large
 } ComplicationValue;
+
+// Compare meaning, not struct padding or unused bytes after string terminators.
+static inline bool complication_values_equal(const ComplicationValue *a,
+                                              const ComplicationValue *b, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    if (a[i].display != b[i].display || a[i].available != b[i].available ||
+        strcmp(a[i].text, b[i].text) || strcmp(a[i].detail, b[i].detail) ||
+        strcmp(a[i].suffix, b[i].suffix)) {
+      return false;
+    }
+    for (int width = 0; width < 3; width++) {
+      if (a[i].widths[width] != b[i].widths[width]) return false;
+    }
+  }
+  return true;
+}
 
 // Snapshot only: preparing a value never queries Health, the clock, or the phone.
 typedef struct {

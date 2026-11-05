@@ -90,7 +90,11 @@ Squares, dots, and their spacing scale together, and the hour shrinks independen
 only when needed. The selected complication text size is preserved, with a
 one-pixel clearance. The bounded fit restores larger sizes when values or available
 space change; unusually long values still use the existing text ellipsis.
-Layout measurements are cached between frames with unchanged data and geometry.
+Text is measured once per changed layout, and the resulting ink rectangles are
+reused throughout fitting. Layout results are cached between frames with unchanged
+data and geometry. Banner compression scales markers against the full canvas even
+when no extra collision inset is needed. Drawing and collision tests share the
+same hour-pixel and steps-icon geometry.
 
 ## Install
 

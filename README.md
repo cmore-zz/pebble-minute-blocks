@@ -89,8 +89,10 @@ one in Minute Blocks' settings. Favorite labels identify the configured category
 instance number and property (for example, Weather / Location 1 / Temperature).
 Empty favorites show Not configured; a failed list lookup shows Unavailable.
 Opening settings briefly reads only the favorites list, with a two-second timeout,
-without requesting the readings themselves. Use selected source above keeps the
-ordinary source selected. That source also remains the plugin's fallback;
+without requesting the readings themselves. Each slot has one Show selector
+containing ordinary sources and plugin favorites. Choosing a plugin reveals a
+When unavailable selector for its ordinary fallback; choosing an ordinary source
+hides that fallback control and disables the plugin for that slot;
 choosing None there makes the slot empty while a plugin is unavailable.
 
 The phone reads `preferences/complications`, follows the selected source/property

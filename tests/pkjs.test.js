@@ -188,7 +188,7 @@ test('disabled or denied plugins retain built-in choices and saved favorites', (
   assert.equal(app.messages[1].PluginFavoriteTopLeft, 2);
   assert.equal(app.messages.at(-1).PluginTTL, 0);
   app.events.showConfiguration();
-  assert.match(app.html(), /Top left plugin/);
+  assert.match(app.html(), /<h3>Top left<\/h3>/);
   assert.match(app.html(), /Favorite 5 — Unavailable/);
 });
 
@@ -205,19 +205,19 @@ test('plugin controls use two slots on chalk and four elsewhere', () => {
   for (const platform of ['aplite', 'basalt', 'chalk', 'diorite', 'emery', 'flint', 'gabbro']) {
     const app = phone(platform, undefined, { subscribeToSource() {} });
     app.events.showConfiguration();
-    const count = (app.html().match(/<label for="PluginFavorite/g) || []).length;
+    const count = (app.html().match(/<label for="show/g) || []).length;
     assert.equal(count, platform === 'chalk' ? 2 : 4);
     new vm.Script(app.html().match(/<script>([\s\S]*)<\/script>/)[1]);
   }
 });
 
-test('each plugin selector follows its own built-in selector', () => {
+test('each slot groups its Show and When unavailable controls', () => {
   const f = phone('aplite', undefined, { subscribeToSource() { return { unsubscribe() {} }; } });
   f.events.showConfiguration();
   const html = f.html();
-  assert.ok(html.indexOf('id="complicationBottomRight"') < html.indexOf('id="PluginFavoriteBottomRight"'));
-  assert.ok(html.indexOf('id="PluginFavoriteBottomRight"') < html.indexOf('id="complicationBottomLeft"'));
-  assert.ok(html.indexOf('id="complicationBottomLeft"') < html.indexOf('id="PluginFavoriteBottomLeft"'));
+  assert.ok(html.indexOf('id="showBottomRight"') < html.indexOf('id="complicationBottomRight"'));
+  assert.ok(html.indexOf('id="complicationBottomRight"') < html.indexOf('id="showBottomLeft"'));
+  assert.ok(html.indexOf('id="showBottomLeft"') < html.indexOf('id="complicationBottomLeft"'));
 });
 
 test('weather refresh does not restart unchanged plugin subscriptions or clear readings', () => {
@@ -258,11 +258,56 @@ test('configuration shows named favorites safely and retains an unconfigured sav
   });
   f.events.showConfiguration();
   const html = f.html();
-  assert.match(html, /Use selected source above/);
+  assert.match(html, />Show<\/label>/);
+  assert.match(html, />When unavailable<\/label>/);
   assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
-  assert.match(html, /value="5" selected>Favorite 5 — Not configured/);
+  assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
   assert.match(html, /Settings → Plugins → Complications/);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].category, 'preferences');
   new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+});
+
+test('Show switches between built-in and plugin while preserving an explicit fallback', () => {
+  const app = phone('emery', JSON.stringify({ ComplicationTopLeft: 4 }), {
+    subscribeToSource(config) { config.onData({ instances: [] }); return { unsubscribe() {} }; }
+  });
+  app.events.showConfiguration();
+  const html = app.html(), fields = {};
+  for (const match of html.matchAll(/<input\b([^>]*)>/g)) {
+    const id = match[1].match(/id="([^"]+)"/);
+    if (id) fields[id[1]] = { value: (match[1].match(/value="([^"]*)"/) || [,''])[1],
+      checked: /\schecked/.test(match[1]) };
+  }
+  for (const match of html.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)) {
+    const options = [...match[2].matchAll(/<option value="([^"]+)"([^>]*)>/g)];
+    fields[match[1]] = { value: (options.find(o => /selected/.test(o[2])) || options[0])[1] };
+  }
+  for (const slot of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) {
+    fields['fallback' + slot] = { style: {} };
+  }
+  fields.save = {};
+  let saved;
+  const context = vm.createContext({
+    document: { getElementById: id => fields[id], querySelectorAll: () => [] },
+    location: { search: '', hash: '', protocol: 'data:' },
+    window: { location: { set href(url) { saved = JSON.parse(decodeURIComponent(url.split('#')[1])); } } }
+  });
+  vm.runInContext(html.match(/<script>([\s\S]*)<\/script>/)[1], context);
+  const show = fields.showTopLeft, fallback = fields.complicationTopLeft;
+  assert.equal(show.value, '4'); assert.equal(fields.fallbackTopLeft.style.display, 'none');
+  show.value = '101'; show.onchange();
+  assert.equal(fields.fallbackTopLeft.style.display, ''); assert.equal(Number(fallback.value), 4);
+  fallback.value = '6'; fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 1); assert.equal(saved.ComplicationTopLeft, 6);
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(saved)) });
+  assert.equal(app.messages[0].ComplicationTopLeft, 6);
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 1);
+  show.value = '2'; show.onchange(); fields.save.onclick();
+  assert.equal(fields.fallbackTopLeft.style.display, 'none');
+  assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 2);
+  show.value = '105'; show.onchange(); fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 5); assert.equal(saved.ComplicationTopLeft, 2);
+  show.value = '0'; show.onchange(); fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 0);
 });

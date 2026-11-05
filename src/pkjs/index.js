@@ -272,13 +272,21 @@ function selectField(label, id, value, options) {
   ].join("");
 }
 
-function pluginField(label, slot, settings, hidden, favoriteLabels) {
-  var key = 'PluginFavorite' + slot;
-  var options = [{ value: 0, label: 'Use selected source above' }];
+function complicationField(label, slot, settings, hidden, favoriteLabels) {
+  var builtin = 'complication' + slot, favorite = 'PluginFavorite' + slot;
+  if (hidden) return hiddenField(builtin, settings['Complication' + slot]) +
+    hiddenField(favorite, settings[favorite] || 0);
+  if (!pluginComplications.available()) return selectField(label + ' — Show', builtin,
+    settings['Complication' + slot], COMPLICATION_OPTIONS) + hiddenField(favorite, settings[favorite] || 0);
+  var options = COMPLICATION_OPTIONS.slice();
   favoriteLabels = favoriteLabels || pluginFavorites.labels(null);
-  for (var i = 1; i <= 5; i++) options.push({ value: i, label: favoriteLabels[i - 1] });
-  return hidden || !pluginComplications.available() ? hiddenField(key, settings[key] || 0) :
-    selectField(label + ' plugin', key, settings[key] || 0, options);
+  for (var i = 1; i <= 5; i++) options.push({ value: 100 + i, label: favoriteLabels[i - 1] });
+  var selected = settings[favorite] ? 100 + settings[favorite] : settings['Complication' + slot];
+  return '<h3>' + label + '</h3>' + selectField('Show', 'show' + slot, selected, options) +
+    '<div id="fallback' + slot + '"' + (settings[favorite] ? '' : ' style="display:none"') + '>' +
+    selectField('When unavailable', builtin, settings['Complication' + slot], COMPLICATION_OPTIONS) +
+    '<p>This source appears if the plugin cannot provide a reading. None leaves the slot empty.</p></div>' +
+    hiddenField(favorite, settings[favorite] || 0);
 }
 
 function presetButtons(presets, label) {
@@ -377,21 +385,11 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    pluginComplications.available() ? '<p>Choose a source for each slot, then optionally replace it with a plugin favorite. The source above is also used if that favorite is unavailable. Choosing None leaves the slot empty during fallback.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If favorites are unavailable, check plugin settings and reopen this page.</p>' : '',
-    selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",
-                settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
-    pluginField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
-    selectField(twoSlotRound ? "Detail 2" : "Top right", "complicationTopRight",
-                settings.ComplicationTopRight, COMPLICATION_OPTIONS),
-    pluginField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
-    twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
-      selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
-                  COMPLICATION_OPTIONS),
-    pluginField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
-    twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
-      selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
-                  COMPLICATION_OPTIONS),
-    pluginField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels),
+    pluginComplications.available() ? '<p>Choose what each slot shows. Selecting a plugin favorite reveals a separate choice for what to show when it is unavailable.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If favorites are unavailable, check plugin settings and reopen this page.</p>' : '',
+    complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
+    complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
+    complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
+    complicationField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -424,7 +422,17 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
     "setColor('hour',preset.HourColor);",
     "};",
     "});",
+    "function syncSlot(slot){",
+    "var show=document.getElementById('show'+slot);if(!show){return;}",
+    "var selected=parseInt(show.value,10),plugin=selected>=101&&selected<=105;",
+    "document.getElementById('PluginFavorite'+slot).value=plugin?selected-100:0;",
+    "document.getElementById('fallback'+slot).style.display=plugin?'':'none';",
+    "if(!plugin){document.getElementById('complication'+slot).value=selected;}",
+    "}",
+    "var slots=['TopLeft','TopRight','BottomRight','BottomLeft'];",
+    "slots.forEach(function(slot){var show=document.getElementById('show'+slot);if(show){show.onchange=function(){syncSlot(slot);};syncSlot(slot);}});",
     "document.getElementById('save').onclick=function(){",
+    "slots.forEach(syncSlot);",
     "var settings={",
     "BackgroundColor:parseInt(document.getElementById('background').value.slice(1),16),",
     "RingColor:parseInt(document.getElementById('ring').value.slice(1),16),",

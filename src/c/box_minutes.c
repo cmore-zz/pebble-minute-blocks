@@ -672,11 +672,7 @@ static HourGeometry hour_geometry(GRect bounds, HourMode mode) {
   const int16_t digit_gap = pixel;
   const int16_t total_width = draw_tens ? digit_width * 2 + digit_gap : digit_width;
   int16_t x = bounds.origin.x + (bounds.size.w - total_width) / 2;
-#if defined(PBL_PLATFORM_EMERY)
-  if (s_settings.large_blocks) {
-    x += hour_large_centering_offset(hour, draw_tens, pixel, gap);
-  }
-#endif
+  x += hour_visible_centering_offset(hour, draw_tens, pixel, gap);
   // Compact mode makes room for complications. chalk nudges the
   // digits up to fit two lines below; gabbro's taller screen keeps them centered
   // so complications can sit both above and below. Inlined into the round branch

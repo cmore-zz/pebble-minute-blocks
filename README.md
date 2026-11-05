@@ -94,7 +94,8 @@ Text is measured once per changed layout, and the resulting ink rectangles are
 reused throughout fitting. Layout results are cached between frames with unchanged
 data and geometry. Banner compression scales markers against the full canvas even
 when no extra collision inset is needed. Drawing and collision tests share the
-same hour-pixel and steps-icon geometry.
+same hour-pixel and steps-icon geometry. All platforms and hour sizes center the
+visible digit edges, including hours with a narrow `1` glyph.
 
 ## Install
 

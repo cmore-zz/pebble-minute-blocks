@@ -12,7 +12,7 @@ static inline bool hour_draw_tens(int hour, bool is_24h, bool leading_zero) {
 // The 1 glyph occupies only the middle column; all other digits span all
 // three columns. Balance the visible outer edges of any two-digit hour.
 // 11 already balances because its empty columns are symmetric.
-static inline int16_t hour_large_centering_offset(int hour, bool draw_tens,
+static inline int16_t hour_visible_centering_offset(int hour, bool draw_tens,
                                                  int16_t pixel, int16_t gap) {
   if (!draw_tens) {
     return 0;

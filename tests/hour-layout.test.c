@@ -20,23 +20,37 @@ int main(void) {
     assert(hour_draw_tens(hour, false, false) == (hour >= 10));
   }
   for (int hour = 0; hour < 24; hour++) {
-    int offset = hour_large_centering_offset(hour, true, 14, 2);
+    int offset = hour_visible_centering_offset(hour, true, 14, 2);
     // Actual occupied edges: the left 1 has a blank first column, and
     // only a right-hand 1 has a blank final column. Their midpoint must
     // coincide with the center of the original 106px hour cell.
     int left = offset + (hour / 10 == 1 ? 16 : 0);
     int right_exclusive = offset + 106 - (hour % 10 == 1 ? 16 : 0);
     assert(left + right_exclusive == 106);
-    assert(hour_large_centering_offset(hour, false, 14, 2) == 0);
+    assert(hour_visible_centering_offset(hour, false, 14, 2) == 0);
   }
-  assert(hour_large_centering_offset(1, false, 14, 2) == 0);
-  assert(hour_large_centering_offset(1, true, 14, 2) == 8);
-  assert(hour_large_centering_offset(11, true, 14, 2) == 0);
-  assert(hour_large_centering_offset(21, true, 14, 2) == 8);
-  assert(hour_large_centering_offset(9, true, 14, 2) == 0);
-  assert(hour_large_centering_offset(20, true, 14, 2) == 0);
-  assert(hour_large_centering_offset(23, true, 14, 2) == 0);
-  assert(hour_large_centering_offset(12, true, 9, 2) == -5);
+  assert(hour_visible_centering_offset(1, false, 14, 2) == 0);
+  assert(hour_visible_centering_offset(1, true, 14, 2) == 8);
+  assert(hour_visible_centering_offset(11, true, 14, 2) == 0);
+  assert(hour_visible_centering_offset(21, true, 14, 2) == 8);
+  assert(hour_visible_centering_offset(9, true, 14, 2) == 0);
+  assert(hour_visible_centering_offset(20, true, 14, 2) == 0);
+  assert(hour_visible_centering_offset(23, true, 14, 2) == 0);
+  assert(hour_visible_centering_offset(12, true, 9, 2) == -5);
+  // All platforms and fitted sizes balance the visible edges, including odd
+  // pixel pitches where integer positioning can differ by at most one pixel.
+  for (int pixel = 3; pixel <= 14; pixel++) {
+    int pitch = pixel + 2;
+    int total_width = 7 * pixel + 8;
+    for (int hour = 0; hour < 24; hour++) {
+      int offset = hour_visible_centering_offset(hour, true, pixel, 2);
+      int left = offset + (hour / 10 == 1 ? pitch : 0);
+      int right = offset + total_width - (hour % 10 == 1 ? pitch : 0);
+      int error = left + right - total_width;
+      assert(error >= -1 && error <= 1);
+      assert(hour_visible_centering_offset(hour, false, pixel, 2) == 0);
+    }
+  }
   // Exercise the production pixel visitor shared by painting and collision checks.
   const int expected_pixels[10] = {12, 5, 11, 11, 9, 11, 12, 7, 13, 12};
   HourGeometry geometry = {.pixel = 4, .x = 10, .y = 20, .digit_width = 16, .digit_gap = 4};

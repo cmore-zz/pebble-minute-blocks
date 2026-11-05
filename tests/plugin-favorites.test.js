@@ -14,7 +14,7 @@ test('favorite labels describe the configured binding without fetching its data'
     'Favorite 3 — Not configured', 'Favorite 4 — Not configured', 'Favorite 5 — Not configured'
   ]);
   assert.equal(favorites.labels(null)[0], 'Favorite 1');
-  assert.equal(favorites.labels([{}])[0], 'Favorite 1');
+  assert.equal(favorites.labels([{}])[0], 'Favorite 1 — Unavailable');
 });
 
 test('synchronous preference reply unsubscribes and completes exactly once', () => {
@@ -36,7 +36,7 @@ test('timeout returns unknown labels and ignores late metadata callbacks', () =>
   const results = [];
   favorites.load({ subscribeToSource(config) {
     request = config; return { unsubscribe() { stopped++; } };
-  } }, (fn, delay) => { assert.equal(delay, 2000); timeout = fn; return 1; }, () => {},
+  } }, (fn, delay) => { assert.equal(delay, 750); timeout = fn; return 1; }, () => {},
   labels => results.push(labels));
   timeout(); request.onData({ instances: [] }); request.onError({});
   assert.equal(stopped, 1); assert.equal(results.length, 1);

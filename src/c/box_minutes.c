@@ -1788,13 +1788,21 @@ static void bluetooth_handler(bool connected) {
   layer_mark_dirty(s_canvas_layer);
 }
 
-#ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
 static void mark_canvas_dirty(void) {
   if (s_canvas_layer) {
     layer_mark_dirty(s_canvas_layer);
   }
 }
 
+static void app_did_focus_handler(bool in_focus) {
+  if (in_focus) {
+    // Recheck the banner's unobstructed bounds after the system menu's return
+    // animation, so a transitional layout cannot linger until the next tick.
+    mark_canvas_dirty();
+  }
+}
+
+#ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
 static void unobstructed_will_change_handler(GRect final_unobstructed_screen_area, void *context) {
   (void)final_unobstructed_screen_area;
   (void)context;
@@ -2055,6 +2063,9 @@ static void init(void) {
     .pebble_app_connection_handler = bluetooth_handler,
   });
   accel_tap_service_subscribe(accel_tap_handler);
+  app_focus_service_subscribe_handlers((AppFocusHandlers) {
+    .did_focus = app_did_focus_handler,
+  });
 #ifdef _PBL_API_EXISTS_unobstructed_area_service_subscribe
   unobstructed_area_service_subscribe((UnobstructedAreaHandlers) {
     .will_change = unobstructed_will_change_handler,
@@ -2079,6 +2090,7 @@ static void deinit(void) {
   battery_state_service_unsubscribe();
   connection_service_unsubscribe();
   accel_tap_service_unsubscribe();
+  app_focus_service_unsubscribe();
 #ifdef _PBL_API_EXISTS_unobstructed_area_service_unsubscribe
   unobstructed_area_service_unsubscribe();
 #endif

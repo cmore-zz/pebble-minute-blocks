@@ -4,17 +4,21 @@ const vm = require('node:vm');
 const test = require('node:test');
 const source = fs.readFileSync('src/pkjs/index.js', 'utf8');
 
-function phone(platform = 'emery', saved) {
+function phone(platform = 'emery', saved, plugins = {}) {
   const events = {};
   const messages = [];
   const requests = [];
   let configUrl;
   const context = vm.createContext({
     console: { log() {} },
+    require: name => require('../src/pkjs/' + name.slice(2)),
+    setTimeout: () => 1,
+    clearTimeout() {},
     localStorage: { getItem: () => saved, setItem() {} },
     Pebble: {
       addEventListener: (name, callback) => { events[name] = callback; },
-      sendAppMessage: (message) => { messages.push(message); },
+      sendAppMessage: (message, success) => { messages.push(message); if (success) success(); },
+      ...plugins,
       getActiveWatchInfo: () => ({ platform }),
       openURL: (url) => { configUrl = url; }
     },
@@ -60,8 +64,11 @@ test('large blocks survive Save and are sent to the watch', () => {
 });
 
 test('complete settings dictionary fits the watch inbox', () => {
-  const settings = phone().context.cloneDefaults();
-  assert.ok(1 + Object.keys(settings).length * 11 <= 256);
+  const app = phone();
+  const settings = app.context.cloneDefaults();
+  app.context.sendSettings(settings);
+  assert.equal(app.messages.length, 2);
+  for (const message of app.messages) assert.ok(1 + Object.keys(message).length * 11 <= 256);
   const keys = JSON.parse(fs.readFileSync('package.json')).pebble.messageKeys;
   assert.ok(Object.keys(settings).every(key => keys.includes(key)));
 });
@@ -116,7 +123,9 @@ test('generated config Save returns the selected block size', () => {
     background: '#000000', ring: '#ffffff', complication: '#ffffff', hour: '#00ffff',
     timeMode: '0', leadingZero: '0', largeBlocks: '1', complicationSize: '0', complicationVisibility: '1',
     secondsVisibility: '2', complicationTopLeft: '1', complicationTopRight: '2',
-    complicationBottomRight: '4', complicationBottomLeft: '5', weatherUnits: '0'
+    complicationBottomRight: '4', complicationBottomLeft: '5', weatherUnits: '0',
+    PluginFavoriteTopLeft: '0', PluginFavoriteTopRight: '2',
+    PluginFavoriteBottomRight: '0', PluginFavoriteBottomLeft: '0'
   };
   const fields = {};
   for (const [key, value] of Object.entries(values)) fields[key] = { value };
@@ -134,6 +143,7 @@ test('generated config Save returns the selected block size', () => {
   const saved = JSON.parse(decodeURIComponent(result.split('#')[1]));
   assert.equal(saved.LargeBlocks, 1);
   assert.equal(saved.HourLeadingZero, 0);
+  assert.equal(saved.PluginFavoriteTopRight, 2);
 });
 
 
@@ -150,4 +160,49 @@ test('older settings pages keep the existing leading-zero behavior', () => {
   delete settings.HourLeadingZero;
   app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
   assert.equal(app.messages[0].HourLeadingZero, 1);
+});
+
+
+test('plugins absent: legacy settings, weather and configuration still work', () => {
+  const app = phone('aplite');
+  app.events.ready();
+  assert.equal(app.messages[0].ComplicationTopLeft, 1);
+  assert.equal(app.requests.length, 1);
+  app.events.showConfiguration();
+  assert.doesNotMatch(app.html(), /<label[^>]*>Top left plugin/);
+  assert.match(app.html(), /id="PluginFavoriteTopLeft" type="hidden"/);
+});
+
+test('disabled or denied plugins retain built-in choices and saved favorites', () => {
+  let attempted = 0;
+  const app = phone('emery', JSON.stringify({ ComplicationTopLeft: 4, PluginFavoriteTopLeft: 2 }), {
+    subscribeToSource() { attempted++; throw new Error('Plugins disabled'); }
+  });
+  app.events.ready();
+  assert.equal(attempted, 1);
+  assert.equal(app.messages[0].ComplicationTopLeft, 4);
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 2);
+  assert.equal(app.messages.at(-1).PluginTTL, 0);
+  app.events.showConfiguration();
+  assert.match(app.html(), /Top left plugin/);
+  assert.match(app.html(), /Plugin favorite 5/);
+});
+
+test('old settings pages preserve saved favorite choices', () => {
+  const app = phone('emery', JSON.stringify({ PluginFavoriteTopLeft: 3 }));
+  const legacy = JSON.parse(JSON.stringify(app.context.cloneDefaults()));
+  delete legacy.PluginFavoriteTopLeft;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(legacy)) });
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 3);
+});
+
+
+test('plugin controls use two slots on chalk and four elsewhere', () => {
+  for (const platform of ['aplite', 'basalt', 'chalk', 'diorite', 'emery', 'flint', 'gabbro']) {
+    const app = phone(platform, undefined, { subscribeToSource() {} });
+    app.events.showConfiguration();
+    const count = (app.html().match(/<label for="PluginFavorite/g) || []).length;
+    assert.equal(count, platform === 'chalk' ? 2 : 4);
+    new vm.Script(app.html().match(/<script>([\s\S]*)<\/script>/)[1]);
+  }
 });

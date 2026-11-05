@@ -2,6 +2,7 @@
 #include "weather_cache.h"
 #include "hour_layout.h"
 #include "complication_value.h"
+#include "plugin_value.h"
 #include "complication_layout.h"
 
 #define MARKER_COUNT 12
@@ -189,6 +190,10 @@ enum {
   PersistKeyLargeBlocks,
   PersistKeyWeatherUpdatedAt,
   PersistKeyHourLeadingZero,
+  PersistKeyPluginFavoriteTopLeft,
+  PersistKeyPluginFavoriteTopRight,
+  PersistKeyPluginFavoriteBottomRight,
+  PersistKeyPluginFavoriteBottomLeft,
 };
 
 enum {
@@ -235,6 +240,12 @@ static time_t s_intro_start_time;
 static uint16_t s_intro_start_ms;
 static Settings s_settings;
 static ComplicationValue s_complication_values[COMPLICATION_SLOT_COUNT];
+static uint8_t s_plugin_favorites[COMPLICATION_SLOT_COUNT];
+static PluginReading s_plugin_readings[COMPLICATION_SLOT_COUNT];
+static const int PLUGIN_PERSIST_KEYS[COMPLICATION_SLOT_COUNT] = {
+  PersistKeyPluginFavoriteTopLeft, PersistKeyPluginFavoriteTopRight,
+  PersistKeyPluginFavoriteBottomRight, PersistKeyPluginFavoriteBottomLeft
+};
 static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
@@ -975,6 +986,8 @@ static void prepare_complication_values(void) {
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
     complication_builtin_value(s_settings.complications[slot], &inputs,
                                &s_complication_values[slot]);
+    plugin_value_apply(&s_complication_values[slot], &s_plugin_readings[slot],
+                       s_plugin_favorites[slot], inputs.now);
   }
 }
 
@@ -1573,7 +1586,57 @@ static void request_weather_timer_handler(void *context) {
   request_weather();
 }
 
+// Plugin packets have their own small dictionaries and never rewrite all saved
+// settings on each live update. Ignore malformed or superseded slot readings.
+static bool receive_plugin_message(DictionaryIterator *iter) {
+  Tuple *slot_tuple = dict_find(iter, MESSAGE_KEY_PluginSlot);
+  if (slot_tuple) {
+    Tuple *favorite = dict_find(iter, MESSAGE_KEY_PluginFavorite);
+    Tuple *text = dict_find(iter, MESSAGE_KEY_PluginText);
+    Tuple *ttl = dict_find(iter, MESSAGE_KEY_PluginTTL);
+    if ((slot_tuple->type != TUPLE_INT && slot_tuple->type != TUPLE_UINT) ||
+        slot_tuple->length != sizeof(int32_t)) return true;
+    int slot = slot_tuple->value->int32;
+    if (slot < 0 || slot >= COMPLICATION_SLOT_COUNT || !favorite || !text || !ttl ||
+        (favorite->type != TUPLE_INT && favorite->type != TUPLE_UINT) ||
+        favorite->length != sizeof(int32_t) || ttl->length != sizeof(int32_t) ||
+        (ttl->type != TUPLE_INT && ttl->type != TUPLE_UINT) || text->type != TUPLE_CSTRING ||
+        text->length == 0 || text->length > PLUGIN_TEXT_LENGTH + 1 ||
+        favorite->value->int32 != s_plugin_favorites[slot]) return true;
+    char bounded_text[PLUGIN_TEXT_LENGTH + 1] = {0};
+    memcpy(bounded_text, (const void *)text->value, text->length);
+    if (bounded_text[text->length - 1] != '\0') return true;
+    if (plugin_reading_set(&s_plugin_readings[slot], favorite->value->int32,
+                           bounded_text, ttl->value->int32, time(NULL))) {
+      if (s_canvas_layer) layer_mark_dirty(s_canvas_layer);
+    }
+    return true;
+  }
+  const uint32_t keys[COMPLICATION_SLOT_COUNT] = {
+    MESSAGE_KEY_PluginFavoriteTopLeft, MESSAGE_KEY_PluginFavoriteTopRight,
+    MESSAGE_KEY_PluginFavoriteBottomRight, MESSAGE_KEY_PluginFavoriteBottomLeft
+  };
+  bool handled = false;
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    Tuple *choice = dict_find(iter, keys[slot]);
+    if (!choice) continue;
+    handled = true;
+    if ((choice->type != TUPLE_INT && choice->type != TUPLE_UINT) ||
+        choice->length != sizeof(int32_t) ||
+        choice->value->int32 < 0 || choice->value->int32 > 5) continue;
+    int favorite = choice->value->int32;
+    if (favorite != s_plugin_favorites[slot]) {
+      s_plugin_favorites[slot] = favorite;
+      s_plugin_readings[slot] = (PluginReading){0};
+      persist_write_int(PLUGIN_PERSIST_KEYS[slot], favorite);
+    }
+  }
+  if (handled && s_canvas_layer) layer_mark_dirty(s_canvas_layer);
+  return handled;
+}
+
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
+  if (receive_plugin_message(iter)) return;
   Tuple *background = dict_find(iter, MESSAGE_KEY_BackgroundColor);
   Tuple *ring = dict_find(iter, MESSAGE_KEY_RingColor);
   Tuple *complication = dict_find(iter, MESSAGE_KEY_ComplicationColor);
@@ -1998,6 +2061,10 @@ static void fonts_unload(void) {
 
 static void init(void) {
   settings_load();
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    int favorite = persist_read_int(PLUGIN_PERSIST_KEYS[slot]);
+    s_plugin_favorites[slot] = favorite >= 1 && favorite <= 5 ? favorite : 0;
+  }
   fonts_load();
   refresh_time();
   s_battery_state = battery_state_service_peek();

@@ -11,7 +11,7 @@
     "displayName": "Minute Blocks",
     "uuid": "4e10c644-2684-4604-aaf3-be90703b8d95",
     "sdkVersion": "3",
-    "manifestVersion": 1,
+    "manifestVersion": 2,
     "enableMultiJS": true,
     "targetPlatforms": [
       "aplite",
@@ -52,7 +52,15 @@
       "SecondsVisibility",
       "KineticEnabled",
       "LargeBlocks",
-      "HourLeadingZero"
+      "HourLeadingZero",
+      "PluginFavoriteTopLeft",
+      "PluginFavoriteTopRight",
+      "PluginFavoriteBottomRight",
+      "PluginFavoriteBottomLeft",
+      "PluginSlot",
+      "PluginFavorite",
+      "PluginText",
+      "PluginTTL"
     ],
     "resources": {
       "media": [
@@ -66,21 +74,33 @@
           "type": "font",
           "name": "FONT_VISITOR_15",
           "file": "fonts/visitor1.ttf",
-          "characterRegex": "[A-Za-z0-9% -]"
+          "characterRegex": "[ -~]"
         },
         {
           "type": "font",
           "name": "FONT_VISITOR_20",
           "file": "fonts/visitor1.ttf",
-          "characterRegex": "[A-Za-z0-9% -]"
+          "characterRegex": "[ -~]"
         },
         {
           "type": "font",
           "name": "FONT_VISITOR_25",
           "file": "fonts/visitor1.ttf",
-          "characterRegex": "[A-Za-z0-9% -]"
+          "characterRegex": "[ -~]"
         }
       ]
-    }
+    },
+    "usesPermissions": [
+      "Location",
+      "Health",
+      {
+        "name": "Internet",
+        "parameters": {
+          "domains": [
+            "api.open-meteo.com"
+          ]
+        }
+      }
+    ]
   }
 }

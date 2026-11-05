@@ -1,3 +1,8 @@
+var pluginSupport = require('./plugin-complications');
+var sendToWatch = require('./watch-messages')(Pebble, setTimeout);
+var pluginComplications = pluginSupport.create(Pebble, sendToWatch, function() { return Date.now(); }, setTimeout, clearTimeout);
+var PLUGIN_SLOTS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
+
 var SETTINGS_KEY = "pebble-minute-blocks-settings";
 
 var DEFAULT_SETTINGS = {
@@ -17,7 +22,11 @@ var DEFAULT_SETTINGS = {
   ComplicationBottomRight: 4,
   ComplicationBottomLeft: 5,
   WeatherEnabled: 1,
-  WeatherUnits: 0
+  WeatherUnits: 0,
+  PluginFavoriteTopLeft: 0,
+  PluginFavoriteTopRight: 0,
+  PluginFavoriteBottomRight: 0,
+  PluginFavoriteBottomLeft: 0
 };
 
 var COLOR_PRESETS = [
@@ -105,7 +114,11 @@ function cloneDefaults() {
     ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
     ComplicationBottomLeft: DEFAULT_SETTINGS.ComplicationBottomLeft,
     WeatherEnabled: DEFAULT_SETTINGS.WeatherEnabled,
-    WeatherUnits: DEFAULT_SETTINGS.WeatherUnits
+    WeatherUnits: DEFAULT_SETTINGS.WeatherUnits,
+    PluginFavoriteTopLeft: 0,
+    PluginFavoriteTopRight: 0,
+    PluginFavoriteBottomRight: 0,
+    PluginFavoriteBottomLeft: 0
   };
 }
 
@@ -146,17 +159,22 @@ function numberFromHex(value) {
 }
 
 function sendSettings(settings) {
-  Pebble.sendAppMessage(settings, function() {
-    console.log("Settings sent");
-  }, function() {
-    console.log("Settings send failed");
+  var builtins = {}, plugins = {};
+  Object.keys(DEFAULT_SETTINGS).forEach(function(key) {
+    if (key.indexOf('PluginFavorite') === 0) {
+      plugins[key] = pluginSupport.favorite(settings, PLUGIN_SLOTS.indexOf(key.slice(14)));
+    } else {
+      builtins[key] = settings[key];
+    }
   });
+  // Keep the existing settings dictionary under Aplite's 256-byte inbox limit.
+  sendToWatch(builtins, 'settings');
+  sendToWatch(plugins, 'plugin-settings');
+  pluginComplications.start(settings);
 }
 
 function sendWeatherUnavailable() {
-  Pebble.sendAppMessage({
-    WeatherAvailable: 0
-  });
+  sendToWatch({ WeatherAvailable: 0 }, 'weather');
 }
 
 function getWeather(settings) {
@@ -192,12 +210,12 @@ function getWeather(settings) {
         var temp = Math.round(readings[0]);
         var high = Math.round(readings[1]);
         var low = Math.round(readings[2]);
-        Pebble.sendAppMessage({
+        sendToWatch({
           WeatherTemp: temp,
           WeatherHigh: high,
           WeatherLow: low,
           WeatherAvailable: 1
-        });
+        }, 'weather');
       } catch (e) {
         console.log("Weather parse failed: " + e.message);
         sendWeatherUnavailable();
@@ -246,6 +264,14 @@ function selectField(label, id, value, options) {
     }).join(""),
     "</select>"
   ].join("");
+}
+
+function pluginField(label, slot, settings, hidden) {
+  var key = 'PluginFavorite' + slot;
+  var options = [{ value: 0, label: 'Use built-in reading' }];
+  for (var i = 1; i <= 5; i++) options.push({ value: i, label: 'Plugin favorite ' + i });
+  return hidden || !pluginComplications.available() ? hiddenField(key, settings[key] || 0) :
+    selectField(label + ' plugin', key, settings[key] || 0, options);
 }
 
 function presetButtons(presets, label) {
@@ -344,16 +370,21 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
+    pluginComplications.available() ? '<p>Plugin favorites come from the Pebble app. Each slot uses its built-in reading when a plugin is unavailable.</p>' : '',
     selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",
                 settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
+    pluginField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false),
     selectField(twoSlotRound ? "Detail 2" : "Top right", "complicationTopRight",
                 settings.ComplicationTopRight, COMPLICATION_OPTIONS),
+    pluginField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false),
     twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
       selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
                   COMPLICATION_OPTIONS),
     twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
       selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
                   COMPLICATION_OPTIONS),
+    pluginField("Bottom right", "BottomRight", settings, twoSlotRound),
+    pluginField("Bottom left", "BottomLeft", settings, twoSlotRound),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -404,7 +435,11 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     "ComplicationBottomRight:parseInt(document.getElementById('complicationBottomRight').value,10),",
     "ComplicationBottomLeft:parseInt(document.getElementById('complicationBottomLeft').value,10),",
     "WeatherEnabled:document.getElementById('weatherEnabled').checked?1:0,",
-    "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10)",
+    "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10),",
+    PLUGIN_SLOTS.map(function(slot) {
+      var key = 'PluginFavorite' + slot;
+      return key + ":parseInt(document.getElementById('" + key + "').value,10)";
+    }).join(','),
     "};",
     "var encoded=encodeURIComponent(JSON.stringify(settings));",
     "var match=(location.search+location.hash).match(/[?#&]return_to=([^&#]+)/);",
@@ -461,6 +496,12 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationBottomLeft = Number(settings.ComplicationBottomLeft);
     settings.WeatherEnabled = settings.WeatherEnabled ? 1 : 0;
     settings.WeatherUnits = Number(settings.WeatherUnits);
+    var previous = loadSettings();
+    PLUGIN_SLOTS.forEach(function(slot, index) {
+      var key = 'PluginFavorite' + slot;
+      if (settings[key] === undefined) settings[key] = previous[key];
+      settings[key] = pluginSupport.favorite(settings, index);
+    });
     saveSettings(settings);
     sendSettings(settings);
     getWeather(settings);
@@ -471,6 +512,8 @@ Pebble.addEventListener("webviewclosed", function(e) {
 
 Pebble.addEventListener("appmessage", function(e) {
   if (e.payload && e.payload.WeatherRequest) {
-    getWeather(loadSettings());
+    var settings = loadSettings();
+    getWeather(settings);
+    pluginComplications.start(settings);
   }
 });

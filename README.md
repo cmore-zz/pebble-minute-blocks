@@ -49,9 +49,12 @@ inside the display; Normal mode retains the outward pulse.
 
 Built and checked with Pebble SDK 4.44 for all seven target platforms.
 
-The app explicitly uses manifest version 1 to preserve its existing weather and
-location access. SDK 4.44 defaults to manifest version 2; switching to that
-permission model will be part of adding optional plugin complications.
+The app uses manifest version 2 for optional phone-side plugin readings. It declares
+Location and Internet access limited to `api.open-meteo.com` for existing weather,
+and Health for the existing watch steps source. Legacy capabilities are retained
+for older companion apps. Declaring permissions does not grant them: the Pebble
+app may ask for approval. Denied weather permissions retain the existing unavailable
+weather behavior; plugin errors restore the slot's selected built-in reading.
 
 The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`
 clears host compiler overrides such as `CC=/opt/homebrew/bin/gcc-15` before
@@ -79,9 +82,61 @@ drawing, round-screen labels, and collision checks all consume those records.
 Unavailable readings retain their existing placeholders; an empty slot has no
 display value. Source IDs and saved corner choices retain their existing values.
 
-This separates data acquisition from presentation so a future phone-side plugin
-adapter can supply values without adding source-specific logic to each renderer.
-Plugin discovery, subscriptions, permissions, and settings are not enabled yet.
+Built-in readings remain the default. On companion apps with the plugin API,
+each slot also offers Plugin favorite 1–5, in the order returned by the Pebble
+app's preferred-complication list. Choose favorites in the Pebble app and select
+one in Minute Blocks' settings. Favorite labels identify the configured category,
+instance number and property (for example, Weather / Location 1 / Temperature).
+Empty favorites show Not configured; unknown details show plain Favorite 1–5 names.
+Settings open immediately using cached labels, then refresh only the favorites list
+in the background with a two-second timeout, without requesting readings themselves.
+Reopen settings to see updated names; failed lookups preserve previously cached labels. Each slot has one Show selector
+containing ordinary sources and plugin favorites. Choosing a plugin reveals a
+When unavailable selector for its ordinary fallback; choosing an ordinary source
+hides that fallback control and disables the plugin for that slot;
+choosing None there makes the slot empty while a plugin is unavailable.
+
+The phone reads `preferences/complications`, follows the selected source/property
+and instance index, and sends short text or numeric readings through the same
+layout and collision code as built-ins. Text is limited to seven printable ASCII
+characters; degree signs are removed, dashes normalized, numbers rounded to one
+decimal, and unsupported characters omitted. Oversized readings fall back rather
+than cutting digits off a number. Images, series, timestamps and actions
+are not supported in this first version. On rectangular watches, opposing plugin
+readings that overlap another slot fall back one at a time, widest first,
+re-measuring after each fallback to preserve the other reading when it fits.
+Text size stays unchanged. Actual ink bounds determine whether they fit.
+
+Missing APIs, disabled plugins, denied permissions, missing favorites, unsupported
+shapes and source errors leave built-ins working. A source error clears its live
+reading and retries only that subscription after 1, 5, and 15 minutes, then
+every 30 minutes while unavailable, even with built-in weather disabled. Later
+source updates can still recover it, including after a permission grant. Unrelated slots keep running,
+and unchanged favorite choices never restart subscriptions on weather refresh.
+Readings expire at the provider's validity limit, capped at 15 minutes (one minute
+when the validity limit is omitted or null), and fall back on the next redraw, normally
+within a minute. Live readings are not persisted. Favorite choices are retained
+when using an older companion app, whose settings page hides the plugin controls.
+
+Settings and live values use separate bounded dictionaries, serialized through a
+single AppMessage queue with coalescing. The queue recomputes remaining lifetime
+at every send and retry, clearing values that expired while waiting. Failed
+plugin settings retry after 1 and 5 minutes, then every 15 minutes until delivered
+or replaced; plugin readings wait for settings acknowledgement while other
+traffic continues. Acknowledged readings with identical text and expiry are
+skipped. For unchanged text with extended validity, one timer per slot retains
+the latest observed deadline and renews about 30 seconds before the acknowledged
+reading expires, even if the provider sends no further update. Shortened validity
+and changed text send immediately. Delayed timers cannot extend the provider
+deadline; errors, removed bindings and changed favorites cancel pending renewals.
+Short-lived readings still need frequent renewal. Extending an unchanged watch
+reading does not force a redraw. Changing favorite
+choices unsubscribes old sources and ignores their late callbacks. Only favorite choices,
+not live values, write to watch persistence.
+
+Plugins are still a preview in the Pebble companion app. This branch can be tested
+with plugins enabled or disabled; public release needs both companion-app paths
+verified. See the [plugin preview documentation](https://developer.repebble.com/guides/plugins/preview/).
 
 All seven platforms check visible complication text and icons against the hour's
 lit pixels and every resting ring-marker state. On a collision, rectangular

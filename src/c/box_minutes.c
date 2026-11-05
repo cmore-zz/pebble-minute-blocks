@@ -2,6 +2,7 @@
 #include "weather_cache.h"
 #include "hour_layout.h"
 #include "complication_value.h"
+#include "plugin_value.h"
 #include "complication_layout.h"
 
 #define MARKER_COUNT 12
@@ -189,6 +190,10 @@ enum {
   PersistKeyLargeBlocks,
   PersistKeyWeatherUpdatedAt,
   PersistKeyHourLeadingZero,
+  PersistKeyPluginFavoriteTopLeft,
+  PersistKeyPluginFavoriteTopRight,
+  PersistKeyPluginFavoriteBottomRight,
+  PersistKeyPluginFavoriteBottomLeft,
 };
 
 enum {
@@ -235,6 +240,14 @@ static time_t s_intro_start_time;
 static uint16_t s_intro_start_ms;
 static Settings s_settings;
 static ComplicationValue s_complication_values[COMPLICATION_SLOT_COUNT];
+static ComplicationValue s_builtin_values[COMPLICATION_SLOT_COUNT];
+static uint8_t s_plugin_mask;
+static uint8_t s_plugin_favorites[COMPLICATION_SLOT_COUNT];
+static PluginReading s_plugin_readings[COMPLICATION_SLOT_COUNT];
+static const int PLUGIN_PERSIST_KEYS[COMPLICATION_SLOT_COUNT] = {
+  PersistKeyPluginFavoriteTopLeft, PersistKeyPluginFavoriteTopRight,
+  PersistKeyPluginFavoriteBottomRight, PersistKeyPluginFavoriteBottomLeft
+};
 static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
@@ -972,9 +985,13 @@ static void prepare_complication_values(void) {
     .bluetooth_connected = s_bluetooth_connected,
     .steps = s_steps,
   };
+  s_plugin_mask = 0;
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
     complication_builtin_value(s_settings.complications[slot], &inputs,
                                &s_complication_values[slot]);
+    s_builtin_values[slot] = s_complication_values[slot];
+    if (plugin_value_apply(&s_complication_values[slot], &s_plugin_readings[slot],
+                           s_plugin_favorites[slot], inputs.now)) s_plugin_mask |= 1u << slot;
   }
 }
 
@@ -1113,10 +1130,12 @@ static bool hour_hits_ring(GRect bounds, bool tight) {
 // At most two ink regions per slot (stacked date or steps icon + number).
 static GRect s_complication_regions[COMPLICATION_SLOT_COUNT * 2];
 static int s_complication_region_count;
+static uint8_t s_region_slots[COMPLICATION_SLOT_COUNT * 2], s_measuring_slot;
 
 static void add_complication_region(GRect region) {
   if (region.size.w > 0 && region.size.h > 0 &&
       s_complication_region_count < COMPLICATION_SLOT_COUNT * 2) {
+    s_region_slots[s_complication_region_count] = s_measuring_slot;
     s_complication_regions[s_complication_region_count++] = region;
   }
 }
@@ -1127,12 +1146,14 @@ static void measure_complication_regions(GRect bounds, bool tight) {
   s_complication_region_count = 0;
   if (PBL_IF_ROUND_ELSE(true, false)) {
     for (int i = 0; i < s_round_complication_count; i++) {
+      s_measuring_slot = i; // Round labels occupy separate rows.
       add_complication_region(complication_text_ink_bounds(s_round_complications[i].rect));
     }
     return;
   }
   GFont font = complication_label_font();
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    s_measuring_slot = slot;
     const ComplicationValue *value = &s_complication_values[slot];
     if (value->display == ComplicationDisplayNone) continue;
     bool right = slot == ComplicationSlotTopRight || slot == ComplicationSlotBottomRight;
@@ -1173,6 +1194,34 @@ static void measure_complication_regions(GRect bounds, bool tight) {
                 rect.origin.y : rect.origin.y + (rect.size.h - size.h) / 2;
     add_complication_region(complication_text_ink_bounds(GRect(x, y, size.w, size.h)));
   }
+}
+
+// Measurement and rendering consume the same values. Cache the fallback mask
+// alongside the raw inputs so animation frames need no extra font measurements.
+static void apply_plugin_fallbacks(uint8_t mask) {
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    if (mask & (1u << slot)) s_complication_values[slot] = s_builtin_values[slot];
+  }
+}
+
+static uint8_t resolve_plugin_overlaps(GRect bounds, bool tight) {
+  uint8_t fallback = 0;
+  // Round layouts stack centred labels on separate rows; no opposing slots.
+  if (PBL_IF_ROUND_ELSE(true, false) || !s_plugin_mask) return 0;
+  // A fallback can itself meet another plugin; resolve until no plugin collides.
+  for (int pass = 0; pass < COMPLICATION_SLOT_COUNT; pass++) {
+    ComplicationRect regions[COMPLICATION_SLOT_COUNT * 2];
+    for (int i = 0; i < s_complication_region_count; i++) {
+      regions[i] = collision_rect(s_complication_regions[i]);
+    }
+    uint8_t conflicts = plugin_overlap_mask(regions, s_region_slots,
+                          s_complication_region_count, s_plugin_mask & ~fallback);
+    if (!conflicts) break;
+    fallback |= conflicts;
+    apply_plugin_fallbacks(fallback);
+    measure_complication_regions(bounds, tight);
+  }
+  return fallback;
 }
 
 static bool layout_needs_compaction(GRect bounds, bool tight, bool check_hour) {
@@ -1221,6 +1270,8 @@ static void select_complication_layout(GRect canvas, GRect bounds, bool tight) {
   static bool previous_tight, previous_large, previous_zero, previous_24h;
   static int previous_hour, previous_size, previous_time_mode;
   static ComplicationValue previous_values[COMPLICATION_SLOT_COUNT];
+  static ComplicationValue previous_builtins[COMPLICATION_SLOT_COUNT];
+  static uint8_t previous_plugin_mask, fallback_mask;
 
   s_layout_canvas_bounds = canvas;
   if (!complications_visible()) {
@@ -1237,11 +1288,18 @@ static void select_complication_layout(GRect canvas, GRect bounds, bool tight) {
       s_settings.large_blocks == previous_large && s_settings.hour_leading_zero == previous_zero &&
       is_24h == previous_24h && s_time.tm_hour == previous_hour &&
       s_settings.complication_size == previous_size && s_settings.time_mode == previous_time_mode &&
+      s_plugin_mask == previous_plugin_mask &&
+      complication_values_equal(s_builtin_values, previous_builtins, COMPLICATION_SLOT_COUNT) &&
       complication_values_equal(s_complication_values, previous_values, COMPLICATION_SLOT_COUNT)) {
+    apply_plugin_fallbacks(fallback_mask);
     return;
   }
+  memcpy(previous_values, s_complication_values, sizeof(previous_values));
+  memcpy(previous_builtins, s_builtin_values, sizeof(previous_builtins));
+  previous_plugin_mask = s_plugin_mask;
   prepare_round_complications(bounds);
   measure_complication_regions(bounds, tight);
+  fallback_mask = resolve_plugin_overlaps(bounds, tight);
   // Start from the original sizes for every changed input, so hiding the banner
   // or replacing a long value restores the largest layout that fits.
   s_layout_shrink = 0;
@@ -1259,7 +1317,6 @@ static void select_complication_layout(GRect canvas, GRect bounds, bool tight) {
   previous_hour = s_time.tm_hour;
   previous_size = s_settings.complication_size;
   previous_time_mode = s_settings.time_mode;
-  memcpy(previous_values, s_complication_values, sizeof(previous_values));
   valid = true;
 }
 
@@ -1573,7 +1630,61 @@ static void request_weather_timer_handler(void *context) {
   request_weather();
 }
 
+// Plugin packets have their own small dictionaries and never rewrite all saved
+// settings on each live update. Ignore malformed or superseded slot readings.
+static bool receive_plugin_message(DictionaryIterator *iter) {
+  Tuple *slot_tuple = dict_find(iter, MESSAGE_KEY_PluginSlot);
+  if (slot_tuple) {
+    Tuple *favorite = dict_find(iter, MESSAGE_KEY_PluginFavorite);
+    Tuple *text = dict_find(iter, MESSAGE_KEY_PluginText);
+    Tuple *ttl = dict_find(iter, MESSAGE_KEY_PluginTTL);
+    if ((slot_tuple->type != TUPLE_INT && slot_tuple->type != TUPLE_UINT) ||
+        slot_tuple->length != sizeof(int32_t)) return true;
+    int slot = slot_tuple->value->int32;
+    if (slot < 0 || slot >= COMPLICATION_SLOT_COUNT || !favorite || !text || !ttl ||
+        (favorite->type != TUPLE_INT && favorite->type != TUPLE_UINT) ||
+        favorite->length != sizeof(int32_t) || ttl->length != sizeof(int32_t) ||
+        (ttl->type != TUPLE_INT && ttl->type != TUPLE_UINT) || text->type != TUPLE_CSTRING ||
+        text->length == 0 || text->length > PLUGIN_TEXT_LENGTH + 1 ||
+        favorite->value->int32 != s_plugin_favorites[slot]) return true;
+    char bounded_text[PLUGIN_TEXT_LENGTH + 1] = {0};
+    memcpy(bounded_text, (const void *)text->value, text->length);
+    if (bounded_text[text->length - 1] != '\0') return true;
+    PluginReading before = s_plugin_readings[slot];
+    time_t now = time(NULL);
+    if (plugin_reading_set(&s_plugin_readings[slot], favorite->value->int32,
+                           bounded_text, ttl->value->int32, now) &&
+        plugin_reading_display_changed(&before, &s_plugin_readings[slot], now)) {
+      if (s_canvas_layer) layer_mark_dirty(s_canvas_layer);
+    }
+    return true;
+  }
+  // SDK message keys are extern const values, not C constant expressions.
+  const uint32_t keys[COMPLICATION_SLOT_COUNT] = {
+    MESSAGE_KEY_PluginFavoriteTopLeft, MESSAGE_KEY_PluginFavoriteTopRight,
+    MESSAGE_KEY_PluginFavoriteBottomRight, MESSAGE_KEY_PluginFavoriteBottomLeft
+  };
+  bool handled = false;
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    Tuple *choice = dict_find(iter, keys[slot]);
+    if (!choice) continue;
+    handled = true;
+    if ((choice->type != TUPLE_INT && choice->type != TUPLE_UINT) ||
+        choice->length != sizeof(int32_t) ||
+        choice->value->int32 < 0 || choice->value->int32 > 5) continue;
+    int favorite = choice->value->int32;
+    if (favorite != s_plugin_favorites[slot]) {
+      s_plugin_favorites[slot] = favorite;
+      s_plugin_readings[slot] = (PluginReading){0};
+      persist_write_int(PLUGIN_PERSIST_KEYS[slot], favorite);
+    }
+  }
+  if (handled && s_canvas_layer) layer_mark_dirty(s_canvas_layer);
+  return handled;
+}
+
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
+  receive_plugin_message(iter);
   Tuple *background = dict_find(iter, MESSAGE_KEY_BackgroundColor);
   Tuple *ring = dict_find(iter, MESSAGE_KEY_RingColor);
   Tuple *complication = dict_find(iter, MESSAGE_KEY_ComplicationColor);
@@ -1595,6 +1706,14 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *seconds_visibility = dict_find(iter, MESSAGE_KEY_SecondsVisibility);
   Tuple *kinetic_enabled = dict_find(iter, MESSAGE_KEY_KineticEnabled);
   Tuple *large_blocks = dict_find(iter, MESSAGE_KEY_LargeBlocks);
+
+  // Pure plugin packets avoid the built-in persistence path, but combined
+  // settings dictionaries still apply all their keys.
+  if (!(background || ring || complication || hour || time_mode || hour_leading_zero ||
+        complication_size || weather_enabled || weather_units || weather_temp || weather_available ||
+        weather_high || weather_low || complication_visibility || complication_top_left ||
+        complication_top_right || complication_bottom_right || complication_bottom_left ||
+        seconds_visibility || kinetic_enabled || large_blocks)) return;
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -1998,6 +2117,10 @@ static void fonts_unload(void) {
 
 static void init(void) {
   settings_load();
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    int favorite = persist_read_int(PLUGIN_PERSIST_KEYS[slot]);
+    s_plugin_favorites[slot] = favorite >= 1 && favorite <= 5 ? favorite : 0;
+  }
   fonts_load();
   refresh_time();
   s_battery_state = battery_state_service_peek();

@@ -4,19 +4,26 @@ const vm = require('node:vm');
 const test = require('node:test');
 const source = fs.readFileSync('src/pkjs/index.js', 'utf8');
 
-function phone(platform = 'emery', saved) {
+function phone(platform = 'emery', saved, plugins = {}, storage = new Map()) {
+  if (saved !== undefined) storage.set("pebble-minute-blocks-settings", saved);
   const events = {};
   const messages = [];
   const requests = [];
   let configUrl;
+  const opened = [];
+  const timers = [];
   const context = vm.createContext({
     console: { log() {} },
-    localStorage: { getItem: () => saved, setItem() {} },
+    require: name => require('../src/pkjs/' + name.slice(2)),
+    setTimeout: (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; },
+    clearTimeout(timer) { timer.cancelled = true; },
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     Pebble: {
       addEventListener: (name, callback) => { events[name] = callback; },
-      sendAppMessage: (message) => { messages.push(message); },
+      sendAppMessage: (message, success) => { messages.push(message); if (success) success(); },
+      ...plugins,
       getActiveWatchInfo: () => ({ platform }),
-      openURL: (url) => { configUrl = url; }
+      openURL: (url) => { configUrl = url; opened.push(url); }
     },
     navigator: { geolocation: {
       getCurrentPosition: (success) => success({ coords: { latitude: 40, longitude: -74 } })
@@ -28,7 +35,8 @@ function phone(platform = 'emery', saved) {
     }
   });
   vm.runInContext(source, context);
-  return { context, events, messages, requests, html: () => decodeURIComponent(configUrl.split(',')[1]) };
+  return { context, events, messages, requests, timers, opened, storage,
+    html: () => decodeURIComponent(configUrl.split(',')[1]) };
 }
 
 test('existing settings gain normal blocks without losing saved preferences', () => {
@@ -60,8 +68,11 @@ test('large blocks survive Save and are sent to the watch', () => {
 });
 
 test('complete settings dictionary fits the watch inbox', () => {
-  const settings = phone().context.cloneDefaults();
-  assert.ok(1 + Object.keys(settings).length * 11 <= 256);
+  const app = phone();
+  const settings = app.context.cloneDefaults();
+  app.context.sendSettings(settings);
+  assert.equal(app.messages.length, 2);
+  for (const message of app.messages) assert.ok(1 + Object.keys(message).length * 11 <= 256);
   const keys = JSON.parse(fs.readFileSync('package.json')).pebble.messageKeys;
   assert.ok(Object.keys(settings).every(key => keys.includes(key)));
 });
@@ -116,7 +127,9 @@ test('generated config Save returns the selected block size', () => {
     background: '#000000', ring: '#ffffff', complication: '#ffffff', hour: '#00ffff',
     timeMode: '0', leadingZero: '0', largeBlocks: '1', complicationSize: '0', complicationVisibility: '1',
     secondsVisibility: '2', complicationTopLeft: '1', complicationTopRight: '2',
-    complicationBottomRight: '4', complicationBottomLeft: '5', weatherUnits: '0'
+    complicationBottomRight: '4', complicationBottomLeft: '5', weatherUnits: '0',
+    PluginFavoriteTopLeft: '0', PluginFavoriteTopRight: '2',
+    PluginFavoriteBottomRight: '0', PluginFavoriteBottomLeft: '0'
   };
   const fields = {};
   for (const [key, value] of Object.entries(values)) fields[key] = { value };
@@ -134,6 +147,7 @@ test('generated config Save returns the selected block size', () => {
   const saved = JSON.parse(decodeURIComponent(result.split('#')[1]));
   assert.equal(saved.LargeBlocks, 1);
   assert.equal(saved.HourLeadingZero, 0);
+  assert.equal(saved.PluginFavoriteTopRight, 2);
 });
 
 
@@ -150,4 +164,198 @@ test('older settings pages keep the existing leading-zero behavior', () => {
   delete settings.HourLeadingZero;
   app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
   assert.equal(app.messages[0].HourLeadingZero, 1);
+});
+
+
+test('plugins absent: legacy settings, weather and configuration still work', () => {
+  const app = phone('aplite');
+  app.events.ready();
+  assert.equal(app.messages[0].ComplicationTopLeft, 1);
+  assert.equal(app.requests.length, 1);
+  app.events.showConfiguration();
+  assert.doesNotMatch(app.html(), /<label[^>]*>Top left plugin/);
+  assert.match(app.html(), /id="PluginFavoriteTopLeft" type="hidden"/);
+});
+
+test('disabled or denied plugins retain built-in choices and saved favorites', () => {
+  let attempted = 0;
+  const app = phone('emery', JSON.stringify({ ComplicationTopLeft: 4, PluginFavoriteTopLeft: 2 }), {
+    subscribeToSource() { attempted++; throw new Error('Plugins disabled'); }
+  });
+  app.events.ready();
+  assert.equal(attempted, 1);
+  assert.equal(app.messages[0].ComplicationTopLeft, 4);
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 2);
+  assert.equal(app.messages.at(-1).PluginTTL, 0);
+  app.events.showConfiguration();
+  assert.match(app.html(), /<h3>Top left<\/h3>/);
+  assert.match(app.html(), /Favorite 5<\/option>/);
+});
+
+test('old settings pages preserve saved favorite choices', () => {
+  const app = phone('emery', JSON.stringify({ PluginFavoriteTopLeft: 3 }));
+  const legacy = JSON.parse(JSON.stringify(app.context.cloneDefaults()));
+  delete legacy.PluginFavoriteTopLeft;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(legacy)) });
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 3);
+});
+
+
+test('plugin controls use two slots on chalk and four elsewhere', () => {
+  for (const platform of ['aplite', 'basalt', 'chalk', 'diorite', 'emery', 'flint', 'gabbro']) {
+    const app = phone(platform, undefined, { subscribeToSource() {} });
+    app.events.showConfiguration();
+    const count = (app.html().match(/<label for="show/g) || []).length;
+    assert.equal(count, platform === 'chalk' ? 2 : 4);
+    new vm.Script(app.html().match(/<script>([\s\S]*)<\/script>/)[1]);
+  }
+});
+
+test('each slot groups its Show and When unavailable controls', () => {
+  const f = phone('aplite', undefined, { subscribeToSource() { return { unsubscribe() {} }; } });
+  f.events.showConfiguration();
+  const html = f.html();
+  assert.ok(html.indexOf('id="showBottomRight"') < html.indexOf('id="complicationBottomRight"'));
+  assert.ok(html.indexOf('id="complicationBottomRight"') < html.indexOf('id="showBottomLeft"'));
+  assert.ok(html.indexOf('id="showBottomLeft"') < html.indexOf('id="complicationBottomLeft"'));
+});
+
+test('weather refresh does not restart unchanged plugin subscriptions or clear readings', () => {
+  const subs = [];
+  const f = phone('aplite', JSON.stringify({ PluginFavoriteTopLeft: 1, WeatherEnabled: 0 }), {
+    subscribeToSource(config) {
+      const sub = { ...config, stopped: false, unsubscribe() { this.stopped = true; } };
+      subs.push(sub); return sub;
+    }
+  });
+  f.events.ready();
+  const text = text => ({ shortText: { text } });
+  subs[0].onData({ instances: [{ properties: {
+    category: text('demo'), item: text('reading'), property: text('value'),
+    index: { numericValue: { value: 0 } }
+  } }] });
+  subs[1].onData({ validUntilMs: Date.now() + 600000,
+    instances: [{ properties: { value: text('72F') } }] });
+  const count = f.messages.filter(m => m.PluginSlot !== undefined).length;
+  f.events.appmessage({ payload: { WeatherRequest: 1 } });
+  assert.equal(subs.length, 2);
+  assert.equal(subs[0].stopped, false); assert.equal(subs[1].stopped, false);
+  assert.equal(f.messages.filter(m => m.PluginSlot !== undefined).length, count);
+});
+
+test('configuration shows named favorites safely and retains an unconfigured saved selection', () => {
+  const requests = [];
+  const f = phone('emery', JSON.stringify({ PluginFavoriteTopLeft: 5 }), {
+    subscribeToSource(config) {
+      requests.push(config);
+      const text = text => ({ shortText: { text } });
+      config.onData({ instances: [{ properties: {
+        category: text('weather'), item: text('location'), property: text('<script>&temperature'),
+        index: { numericValue: { value: 0 } }
+      } }] });
+      return { unsubscribe() {} };
+    }
+  });
+  f.events.showConfiguration();
+  f.events.showConfiguration();
+  const html = f.html();
+  assert.match(html, />Show<\/label>/);
+  assert.match(html, />When unavailable<\/label>/);
+  assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
+  assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
+  assert.match(html, /Settings → Plugins → Complications/);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].category, 'preferences');
+  new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+});
+
+test('Show switches between built-in and plugin while preserving an explicit fallback', () => {
+  const app = phone('emery', JSON.stringify({ ComplicationTopLeft: 4 }), {
+    subscribeToSource(config) { config.onData({ instances: [] }); return { unsubscribe() {} }; }
+  });
+  app.events.showConfiguration();
+  const html = app.html(), fields = {};
+  for (const match of html.matchAll(/<input\b([^>]*)>/g)) {
+    const id = match[1].match(/id="([^"]+)"/);
+    if (id) fields[id[1]] = { value: (match[1].match(/value="([^"]*)"/) || [,''])[1],
+      checked: /\schecked/.test(match[1]) };
+  }
+  for (const match of html.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)) {
+    const options = [...match[2].matchAll(/<option value="([^"]+)"([^>]*)>/g)];
+    fields[match[1]] = { value: (options.find(o => /selected/.test(o[2])) || options[0])[1] };
+  }
+  for (const slot of ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft']) {
+    fields['fallback' + slot] = { style: {} };
+  }
+  fields.save = {};
+  let saved;
+  const context = vm.createContext({
+    document: { getElementById: id => fields[id], querySelectorAll: () => [] },
+    location: { search: '', hash: '', protocol: 'data:' },
+    window: { location: { set href(url) { saved = JSON.parse(decodeURIComponent(url.split('#')[1])); } } }
+  });
+  vm.runInContext(html.match(/<script>([\s\S]*)<\/script>/)[1], context);
+  const show = fields.showTopLeft, fallback = fields.complicationTopLeft;
+  assert.equal(show.value, '4'); assert.equal(fields.fallbackTopLeft.style.display, 'none');
+  show.value = '101'; show.onchange();
+  assert.equal(fields.fallbackTopLeft.style.display, ''); assert.equal(Number(fallback.value), 4);
+  fallback.value = '6'; fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 1); assert.equal(saved.ComplicationTopLeft, 6);
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(saved)) });
+  assert.equal(app.messages[0].ComplicationTopLeft, 6);
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 1);
+  show.value = '2'; show.onchange(); fields.save.onclick();
+  assert.equal(fields.fallbackTopLeft.style.display, 'none');
+  assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 2);
+  show.value = '105'; show.onchange(); fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 5); assert.equal(saved.ComplicationTopLeft, 2);
+  show.value = '0'; show.onchange(); fields.save.onclick();
+  assert.equal(saved.PluginFavoriteTopLeft, 0); assert.equal(saved.ComplicationTopLeft, 0);
+});
+
+test('settings open immediately while asynchronous labels refresh for the next opening', () => {
+  const requests = [];
+  let stopped = 0;
+  const app = phone('emery', undefined, { subscribeToSource(request) {
+    assert.ok(app.opened.length > 0, 'page opens before subscription');
+    requests.push(request); return { unsubscribe() { stopped++; } };
+  } });
+  app.events.showConfiguration();
+  assert.equal(app.opened.length, 1);
+  assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+  app.events.showConfiguration();
+  assert.equal(requests.length, 1, 'concurrent openings share the pending refresh');
+  const text = value => ({ shortText: { text: value } });
+  requests[0].onData({ instances: [{ properties: { category: text('weather'),
+    item: text('location'), property: text('temperature'), index: { numericValue: { value: 0 } } } }] });
+  assert.equal(app.opened.length, 2, 'reply must not reopen the current page');
+  assert.equal(stopped, 1);
+  const restarted = phone('emery', undefined, { subscribeToSource(request) {
+    requests.push(request); return { unsubscribe() { stopped++; } };
+  } }, app.storage);
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/);
+  restarted.timers.find(t => t.delay === 2000).fn();
+  requests[1].onData({ instances: [] });
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/, 'timeout and late reply retain cache');
+  requests[2].onError({});
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Weather/, 'errors retain cache');
+  requests[3].onData({ instances: [] });
+  restarted.events.showConfiguration();
+  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'successful empty list replaces cache');
+});
+
+test('invalid label cache and failed storage do not prevent opening settings', () => {
+  for (const cached of ['broken JSON', '{}', '[1,2,3,4,5]']) {
+    const storage = new Map([['pebble-minute-blocks-favorite-labels', cached]]);
+    const app = phone('emery', undefined, { subscribeToSource(request) {
+      request.onData({ instances: [] }); return { unsubscribe() {} };
+    } }, storage);
+    app.context.localStorage.setItem = () => { throw new Error('storage full'); };
+    app.events.showConfiguration();
+    assert.equal(app.opened.length, 1);
+    assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+  }
 });

@@ -1,3 +1,9 @@
+var pluginSupport = require('./plugin-complications');
+var pluginFavorites = require('./plugin-favorites');
+var sendToWatch = require('./watch-messages')(Pebble, setTimeout);
+var pluginComplications = pluginSupport.create(Pebble, sendToWatch, function() { return Date.now(); }, setTimeout, clearTimeout);
+var PLUGIN_SLOTS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
+
 var SETTINGS_KEY = "pebble-minute-blocks-settings";
 
 var DEFAULT_SETTINGS = {
@@ -17,7 +23,11 @@ var DEFAULT_SETTINGS = {
   ComplicationBottomRight: 4,
   ComplicationBottomLeft: 5,
   WeatherEnabled: 1,
-  WeatherUnits: 0
+  WeatherUnits: 0,
+  PluginFavoriteTopLeft: 0,
+  PluginFavoriteTopRight: 0,
+  PluginFavoriteBottomRight: 0,
+  PluginFavoriteBottomLeft: 0
 };
 
 var COLOR_PRESETS = [
@@ -105,7 +115,11 @@ function cloneDefaults() {
     ComplicationBottomRight: DEFAULT_SETTINGS.ComplicationBottomRight,
     ComplicationBottomLeft: DEFAULT_SETTINGS.ComplicationBottomLeft,
     WeatherEnabled: DEFAULT_SETTINGS.WeatherEnabled,
-    WeatherUnits: DEFAULT_SETTINGS.WeatherUnits
+    WeatherUnits: DEFAULT_SETTINGS.WeatherUnits,
+    PluginFavoriteTopLeft: 0,
+    PluginFavoriteTopRight: 0,
+    PluginFavoriteBottomRight: 0,
+    PluginFavoriteBottomLeft: 0
   };
 }
 
@@ -146,17 +160,22 @@ function numberFromHex(value) {
 }
 
 function sendSettings(settings) {
-  Pebble.sendAppMessage(settings, function() {
-    console.log("Settings sent");
-  }, function() {
-    console.log("Settings send failed");
+  var builtins = {}, plugins = {};
+  Object.keys(DEFAULT_SETTINGS).forEach(function(key) {
+    if (key.indexOf('PluginFavorite') === 0) {
+      plugins[key] = pluginSupport.favorite(settings, PLUGIN_SLOTS.indexOf(key.slice(14)));
+    } else {
+      builtins[key] = settings[key];
+    }
   });
+  // Keep the existing settings dictionary under Aplite's 256-byte inbox limit.
+  sendToWatch(builtins, 'settings');
+  sendToWatch(plugins, 'plugin-settings');
+  pluginComplications.start(settings);
 }
 
 function sendWeatherUnavailable() {
-  Pebble.sendAppMessage({
-    WeatherAvailable: 0
-  });
+  sendToWatch({ WeatherAvailable: 0 }, 'weather');
 }
 
 function getWeather(settings) {
@@ -192,12 +211,12 @@ function getWeather(settings) {
         var temp = Math.round(readings[0]);
         var high = Math.round(readings[1]);
         var low = Math.round(readings[2]);
-        Pebble.sendAppMessage({
+        sendToWatch({
           WeatherTemp: temp,
           WeatherHigh: high,
           WeatherLow: low,
           WeatherAvailable: 1
-        });
+        }, 'weather');
       } catch (e) {
         console.log("Weather parse failed: " + e.message);
         sendWeatherUnavailable();
@@ -235,6 +254,11 @@ function field(label, id, value) {
   ].join("");
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function selectField(label, id, value, options) {
   return [
     "<label for=\"" + id + "\">" + label + "</label>",
@@ -242,10 +266,27 @@ function selectField(label, id, value, options) {
     options.map(function(option) {
       return "<option value=\"" + option.value + "\"" +
         (Number(value) === option.value ? " selected" : "") + ">" +
-        option.label + "</option>";
+        escapeHtml(option.label) + "</option>";
     }).join(""),
     "</select>"
   ].join("");
+}
+
+function complicationField(label, slot, settings, hidden, favoriteLabels) {
+  var builtin = 'complication' + slot, favorite = 'PluginFavorite' + slot;
+  if (hidden) return hiddenField(builtin, settings['Complication' + slot]) +
+    hiddenField(favorite, settings[favorite] || 0);
+  if (!pluginComplications.available()) return selectField(label + ' — Show', builtin,
+    settings['Complication' + slot], COMPLICATION_OPTIONS) + hiddenField(favorite, settings[favorite] || 0);
+  var options = COMPLICATION_OPTIONS.slice();
+  favoriteLabels = favoriteLabels || pluginFavorites.labels(null);
+  for (var i = 1; i <= 5; i++) options.push({ value: 100 + i, label: favoriteLabels[i - 1] });
+  var selected = settings[favorite] ? 100 + settings[favorite] : settings['Complication' + slot];
+  return '<h3>' + label + '</h3>' + selectField('Show', 'show' + slot, selected, options) +
+    '<div id="fallback' + slot + '"' + (settings[favorite] ? '' : ' style="display:none"') + '>' +
+    selectField('When unavailable', builtin, settings['Complication' + slot], COMPLICATION_OPTIONS) +
+    '<p>This source appears if the plugin cannot provide a reading. None leaves the slot empty.</p></div>' +
+    hiddenField(favorite, settings[favorite] || 0);
 }
 
 function presetButtons(presets, label) {
@@ -277,7 +318,7 @@ function hiddenColorField(id, value) {
   return hiddenField(id, hexFromNumber(value));
 }
 
-function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
+function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteLabels) {
   var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
 
   return [
@@ -344,16 +385,11 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    selectField(twoSlotRound ? "Detail 1" : "Top left", "complicationTopLeft",
-                settings.ComplicationTopLeft, COMPLICATION_OPTIONS),
-    selectField(twoSlotRound ? "Detail 2" : "Top right", "complicationTopRight",
-                settings.ComplicationTopRight, COMPLICATION_OPTIONS),
-    twoSlotRound ? hiddenField("complicationBottomRight", settings.ComplicationBottomRight) :
-      selectField("Bottom right", "complicationBottomRight", settings.ComplicationBottomRight,
-                  COMPLICATION_OPTIONS),
-    twoSlotRound ? hiddenField("complicationBottomLeft", settings.ComplicationBottomLeft) :
-      selectField("Bottom left", "complicationBottomLeft", settings.ComplicationBottomLeft,
-                  COMPLICATION_OPTIONS),
+    pluginComplications.available() ? '<p>Choose what each slot shows. Selecting a plugin favorite reveals a separate choice for what to show when it is unavailable.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. Labels refresh in the background; reopen this page to see updated names.</p>' : '',
+    complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
+    complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
+    complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
+    complicationField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels),
     "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
     "<label for=\"weatherUnits\">Weather units</label>",
     "<select id=\"weatherUnits\">",
@@ -386,7 +422,17 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     "setColor('hour',preset.HourColor);",
     "};",
     "});",
+    "function syncSlot(slot){",
+    "var show=document.getElementById('show'+slot);if(!show){return;}",
+    "var selected=parseInt(show.value,10),plugin=selected>=101&&selected<=105;",
+    "document.getElementById('PluginFavorite'+slot).value=plugin?selected-100:0;",
+    "document.getElementById('fallback'+slot).style.display=plugin?'':'none';",
+    "if(!plugin){document.getElementById('complication'+slot).value=selected;}",
+    "}",
+    "var slots=['TopLeft','TopRight','BottomRight','BottomLeft'];",
+    "slots.forEach(function(slot){var show=document.getElementById('show'+slot);if(show){show.onchange=function(){syncSlot(slot);};syncSlot(slot);}});",
     "document.getElementById('save').onclick=function(){",
+    "slots.forEach(syncSlot);",
     "var settings={",
     "BackgroundColor:parseInt(document.getElementById('background').value.slice(1),16),",
     "RingColor:parseInt(document.getElementById('ring').value.slice(1),16),",
@@ -404,7 +450,11 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2) {
     "ComplicationBottomRight:parseInt(document.getElementById('complicationBottomRight').value,10),",
     "ComplicationBottomLeft:parseInt(document.getElementById('complicationBottomLeft').value,10),",
     "WeatherEnabled:document.getElementById('weatherEnabled').checked?1:0,",
-    "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10)",
+    "WeatherUnits:parseInt(document.getElementById('weatherUnits').value,10),",
+    PLUGIN_SLOTS.map(function(slot) {
+      var key = 'PluginFavorite' + slot;
+      return key + ":parseInt(document.getElementById('" + key + "').value,10)";
+    }).join(','),
     "};",
     "var encoded=encodeURIComponent(JSON.stringify(settings));",
     "var match=(location.search+location.hash).match(/[?#&]return_to=([^&#]+)/);",
@@ -425,6 +475,17 @@ Pebble.addEventListener("ready", function() {
   getWeather(settings);
 });
 
+var FAVORITE_LABELS_KEY = "pebble-minute-blocks-favorite-labels";
+var favoriteLabelsLoading = false;
+function cachedFavoriteLabels() {
+  try {
+    var labels = JSON.parse(localStorage.getItem(FAVORITE_LABELS_KEY));
+    if (Array.isArray(labels) && labels.length === 5 && labels.every(function(label) {
+      return typeof label === 'string' && label.length <= 256;
+    })) return labels;
+  } catch (e) { /* Missing or damaged cache must not prevent opening settings. */ }
+  return pluginFavorites.labels(null);
+}
 Pebble.addEventListener("showConfiguration", function() {
   var info = typeof Pebble.getActiveWatchInfo === "function" ? Pebble.getActiveWatchInfo() : {};
   var platform = info && info.platform ? info.platform : "";
@@ -434,7 +495,18 @@ Pebble.addEventListener("showConfiguration", function() {
   var isRound = platform === "chalk" || platform === "gabbro";
   var twoSlotRound = platform === "chalk";
   Pebble.openURL("data:text/html;charset=utf-8," +
-                 encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound, platform === "emery")));
+    encodeURIComponent(buildConfigHtml(loadSettings(), isRound, isBw, twoSlotRound,
+      platform === "emery", cachedFavoriteLabels())));
+  // Refresh for the next opening without delaying or replacing the current page.
+  if (favoriteLabelsLoading) return;
+  favoriteLabelsLoading = true;
+  pluginFavorites.load(Pebble, setTimeout, clearTimeout, function(labels, known) {
+    favoriteLabelsLoading = false;
+    if (known) {
+      try { localStorage.setItem(FAVORITE_LABELS_KEY, JSON.stringify(labels)); }
+      catch (e) { /* Settings remain usable when storage is unavailable. */ }
+    }
+  });
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {
@@ -461,6 +533,12 @@ Pebble.addEventListener("webviewclosed", function(e) {
     settings.ComplicationBottomLeft = Number(settings.ComplicationBottomLeft);
     settings.WeatherEnabled = settings.WeatherEnabled ? 1 : 0;
     settings.WeatherUnits = Number(settings.WeatherUnits);
+    var previous = loadSettings();
+    PLUGIN_SLOTS.forEach(function(slot, index) {
+      var key = 'PluginFavorite' + slot;
+      if (settings[key] === undefined) settings[key] = previous[key];
+      settings[key] = pluginSupport.favorite(settings, index);
+    });
     saveSettings(settings);
     sendSettings(settings);
     getWeather(settings);
@@ -471,6 +549,8 @@ Pebble.addEventListener("webviewclosed", function(e) {
 
 Pebble.addEventListener("appmessage", function(e) {
   if (e.payload && e.payload.WeatherRequest) {
-    getWeather(loadSettings());
+    var settings = loadSettings();
+    getWeather(settings);
+    pluginComplications.start(settings);
   }
 });

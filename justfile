@@ -14,6 +14,8 @@ test:
     @test_bin=$(mktemp /tmp/minute-blocks-complication-test.XXXXXX); trap 'rm -f "$test_bin"' EXIT; cc -std=c99 -Wall -Wextra -Werror tests/complication-value.test.c -o "$test_bin" && "$test_bin"
     @test_bin=$(mktemp /tmp/minute-blocks-layout-test.XXXXXX); trap 'rm -f "$test_bin"' EXIT; cc -std=c99 -Wall -Wextra -Werror tests/complication-layout.test.c -o "$test_bin" && "$test_bin"
 
+    @test_bin=$(mktemp /tmp/minute-blocks-plugin-test.XXXXXX); trap 'rm -f "$test_bin"' EXIT; cc -std=c99 -Wall -Wextra -Werror tests/plugin-value.test.c -o "$test_bin" && "$test_bin"
+
 clean:
     unset CC CXX && pebble clean
 

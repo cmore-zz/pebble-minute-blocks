@@ -47,7 +47,11 @@ inside the display; Normal mode retains the outward pulse.
 
 ## Build
 
-Built and checked with Pebble SDK 4.33.1 for all seven target platforms.
+Built and checked with Pebble SDK 4.44 for all seven target platforms.
+
+The app explicitly uses manifest version 1 to preserve its existing weather and
+location access. SDK 4.44 defaults to manifest version 2; switching to that
+permission model will be part of adding optional plugin complications.
 
 The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`
 clears host compiler overrides such as `CC=/opt/homebrew/bin/gcc-15` before
@@ -64,8 +68,34 @@ C compiler:
 pebble build
 ```
 
-Run the settings, weather, and cache expiry regression tests with `just test`
+Run the settings, weather expiry, hour layout, and complication value regression tests with `just test`
 (Node.js and a C compiler required).
+
+## Complication Data
+
+Built-in sources prepare bounded `ComplicationValue` records from a snapshot of
+the clock, cached weather, battery, connection state, and cached steps. Rectangular
+drawing, round-screen labels, and collision checks all consume those records.
+Unavailable readings retain their existing placeholders; an empty slot has no
+display value. Source IDs and saved corner choices retain their existing values.
+
+This separates data acquisition from presentation so a future phone-side plugin
+adapter can supply values without adding source-specific logic to each renderer.
+Plugin discovery, subscriptions, permissions, and settings are not enabled yet.
+
+All seven platforms check visible complication text and icons against the hour's
+lit pixels and every resting ring-marker state. On a collision, rectangular
+layouts move the ring inward in two-pixel steps; round layouts retain its radius.
+Squares, dots, and their spacing scale together, and the hour shrinks independently
+only when needed. The selected complication text size is preserved, with a
+one-pixel clearance. The bounded fit restores larger sizes when values or available
+space change; unusually long values still use the existing text ellipsis.
+Text is measured once per changed layout, and the resulting ink rectangles are
+reused throughout fitting. Layout results are cached between frames with unchanged
+data and geometry. Banner compression scales markers against the full canvas even
+when no extra collision inset is needed. Drawing and collision tests share the
+same hour-pixel and steps-icon geometry. All platforms and hour sizes center the
+visible digit edges, including hours with a narrow `1` glyph.
 
 ## Install
 
@@ -101,8 +131,8 @@ The Pebble app settings page supports:
 - 24-hour leading zero: show (default) or hide, including when following the watch setting
 - block size on Pebble Time 2: normal or large (both center hour and outer ring);
   Large mode centers all two-digit hours using the visible digit pixels, and
-  temporarily shrinks the ring and hour only when visible corner complications
-  risk overlapping the blocks
+  adapts the ring, individual squares/dots, and hour when visible complications
+  risk overlapping the blocks; collision sizing also applies to the other watches
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until you shake the watch
   (or wake the backlight on supported firmware)

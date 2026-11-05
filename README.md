@@ -75,13 +75,22 @@ Run the settings, weather expiry, hour layout, and complication value regression
 
 Built-in sources prepare bounded `ComplicationValue` records from a snapshot of
 the clock, cached weather, battery, connection state, and cached steps. Rectangular
-drawing, round-screen labels, and PT2 overlap checks all consume those records.
+drawing, round-screen labels, and collision checks all consume those records.
 Unavailable readings retain their existing placeholders; an empty slot has no
 display value. Source IDs and saved corner choices retain their existing values.
 
 This separates data acquisition from presentation so a future phone-side plugin
 adapter can supply values without adding source-specific logic to each renderer.
 Plugin discovery, subscriptions, permissions, and settings are not enabled yet.
+
+All seven platforms check visible complication text and icons against the hour's
+lit pixels and every resting ring-marker state. On a collision, rectangular
+layouts move the ring inward in two-pixel steps; round layouts retain its radius.
+Squares, dots, and their spacing scale together, and the hour shrinks independently
+only when needed. The selected complication text size is preserved, with a
+one-pixel clearance. The bounded fit restores larger sizes when values or available
+space change; unusually long values still use the existing text ellipsis.
+Layout measurements are cached between frames with unchanged data and geometry.
 
 ## Install
 
@@ -117,8 +126,8 @@ The Pebble app settings page supports:
 - 24-hour leading zero: show (default) or hide, including when following the watch setting
 - block size on Pebble Time 2: normal or large (both center hour and outer ring);
   Large mode centers all two-digit hours using the visible digit pixels, and
-  temporarily shrinks the ring and hour only when visible corner complications
-  risk overlapping the blocks
+  adapts the ring, individual squares/dots, and hour when visible complications
+  risk overlapping the blocks; collision sizing also applies to the other watches
 - complication size: normal, medium, or large
 - complication visibility: always shown, or hidden until you shake the watch
   (or wake the backlight on supported firmware)

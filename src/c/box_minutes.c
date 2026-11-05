@@ -2,6 +2,7 @@
 #include "weather_cache.h"
 #include "hour_layout.h"
 #include "complication_value.h"
+#include "complication_layout.h"
 
 #define MARKER_COUNT 12
 #define DOT_COUNT 4
@@ -12,71 +13,84 @@
 // Large mode adds ~25% to the blocks. When corner details risk overlap, pull
 // the ring in and reduce the hour to leave room for long forecasts. Otherwise keep
 // the blocks near the edges; breathe inward on launch to avoid clipping.
-#define FUTURE_MARKER_SIZE (s_settings.large_blocks ? 5 : 4)
-#define ACTIVE_MARKER_SIZE (s_settings.large_blocks ? 11 : 9)
-#define COMPLETE_MARKER_SIZE (s_settings.large_blocks ? 20 : 16)
-#define FUTURE_MARKER_OFFSET (s_settings.large_blocks ? 5 : 4)
-#define ACTIVE_MARKER_OFFSET (s_settings.large_blocks ? 7 : 6)
-#define HOUR_PIXEL_SIZE (s_settings.large_blocks ? 14 : 11)
-#define HOUR_COMPACT_PIXEL_SIZE (s_settings.large_blocks ? 12 : 8)
-#define HOUR_OVERLAY_PIXEL_SIZE (s_settings.large_blocks && !s_large_layout_compact ? 9 : 7)
+#define BASE_FUTURE_MARKER_SIZE (s_settings.large_blocks ? 5 : 4)
+#define BASE_ACTIVE_MARKER_SIZE (s_settings.large_blocks ? 11 : 9)
+#define BASE_COMPLETE_MARKER_SIZE (s_settings.large_blocks ? 20 : 16)
+#define BASE_FUTURE_MARKER_OFFSET (s_settings.large_blocks ? 5 : 4)
+#define BASE_ACTIVE_MARKER_OFFSET (s_settings.large_blocks ? 7 : 6)
+#define BASE_HOUR_PIXEL_SIZE (s_settings.large_blocks ? 14 : 11)
+#define BASE_HOUR_COMPACT_PIXEL_SIZE (s_settings.large_blocks ? 12 : 8)
+#define BASE_HOUR_OVERLAY_PIXEL_SIZE (s_settings.large_blocks ? 9 : 7)
 #define HOUR_Y_OFFSET 0
-#define RING_INSET (s_settings.large_blocks ? (s_large_layout_compact ? 28 : 14) : 12)
+#define BASE_RING_INSET (s_settings.large_blocks ? 14 : 12)
 #define INTRO_PULSE_AMPLITUDE (s_settings.large_blocks ? -4 : 4)
 #elif defined(PBL_PLATFORM_CHALK)
-#define FUTURE_MARKER_SIZE 3
-#define ACTIVE_MARKER_SIZE 7
-#define COMPLETE_MARKER_SIZE 12
-#define FUTURE_MARKER_OFFSET 3
-#define ACTIVE_MARKER_OFFSET 5
-#define HOUR_PIXEL_SIZE 8
-#define HOUR_COMPACT_PIXEL_SIZE 6
-#define HOUR_OVERLAY_PIXEL_SIZE 5
+#define BASE_FUTURE_MARKER_SIZE 3
+#define BASE_ACTIVE_MARKER_SIZE 7
+#define BASE_COMPLETE_MARKER_SIZE 12
+#define BASE_FUTURE_MARKER_OFFSET 3
+#define BASE_ACTIVE_MARKER_OFFSET 5
+#define BASE_HOUR_PIXEL_SIZE 8
+#define BASE_HOUR_COMPACT_PIXEL_SIZE 6
+#define BASE_HOUR_OVERLAY_PIXEL_SIZE 5
 #define HOUR_Y_OFFSET 0
 #elif defined(PBL_PLATFORM_GABBRO)
 // Pebble Round 2: round like chalk, but 260x260 vs 180x180 -- chalk's sizes
-// scaled ~1.44x. ACTIVE_MARKER_OFFSET 7 vs ACTIVE_MARKER_SIZE 10 keeps the four
+// scaled ~1.44x. BASE_ACTIVE_MARKER_OFFSET 7 vs BASE_ACTIVE_MARKER_SIZE 10 keeps the four
 // active dots separated (4px gap).
-#define FUTURE_MARKER_SIZE 4
-#define ACTIVE_MARKER_SIZE 10
-#define COMPLETE_MARKER_SIZE 17
-#define FUTURE_MARKER_OFFSET 4
-#define ACTIVE_MARKER_OFFSET 7
-#define HOUR_PIXEL_SIZE 12
-#define HOUR_COMPACT_PIXEL_SIZE 9
-#define HOUR_OVERLAY_PIXEL_SIZE 7
+#define BASE_FUTURE_MARKER_SIZE 4
+#define BASE_ACTIVE_MARKER_SIZE 10
+#define BASE_COMPLETE_MARKER_SIZE 17
+#define BASE_FUTURE_MARKER_OFFSET 4
+#define BASE_ACTIVE_MARKER_OFFSET 7
+#define BASE_HOUR_PIXEL_SIZE 12
+#define BASE_HOUR_COMPACT_PIXEL_SIZE 9
+#define BASE_HOUR_OVERLAY_PIXEL_SIZE 7
 #define HOUR_Y_OFFSET 0
 // Bigger blocks on a round screen reach the bezel at the diagonals; pull the
 // ring in further than the default 12px inset.
-#define RING_INSET 22
+#define BASE_RING_INSET 22
 #elif defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || \
       defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT)
-#define FUTURE_MARKER_SIZE 2
-#define ACTIVE_MARKER_SIZE 6
-#define COMPLETE_MARKER_SIZE 10
-#define FUTURE_MARKER_OFFSET 2
-#define ACTIVE_MARKER_OFFSET 4
-#define HOUR_PIXEL_SIZE 8
-#define HOUR_COMPACT_PIXEL_SIZE 7
-#define HOUR_OVERLAY_PIXEL_SIZE 6
+#define BASE_FUTURE_MARKER_SIZE 2
+#define BASE_ACTIVE_MARKER_SIZE 6
+#define BASE_COMPLETE_MARKER_SIZE 10
+#define BASE_FUTURE_MARKER_OFFSET 2
+#define BASE_ACTIVE_MARKER_OFFSET 4
+#define BASE_HOUR_PIXEL_SIZE 8
+#define BASE_HOUR_COMPACT_PIXEL_SIZE 7
+#define BASE_HOUR_OVERLAY_PIXEL_SIZE 6
 #define HOUR_Y_OFFSET 0
 #else
-#define FUTURE_MARKER_SIZE 1
-#define ACTIVE_MARKER_SIZE 3
-#define COMPLETE_MARKER_SIZE 7
-#define FUTURE_MARKER_OFFSET 2
-#define ACTIVE_MARKER_OFFSET 3
-#define HOUR_PIXEL_SIZE 8
-#define HOUR_COMPACT_PIXEL_SIZE 7
-#define HOUR_OVERLAY_PIXEL_SIZE 6
+#define BASE_FUTURE_MARKER_SIZE 1
+#define BASE_ACTIVE_MARKER_SIZE 3
+#define BASE_COMPLETE_MARKER_SIZE 7
+#define BASE_FUTURE_MARKER_OFFSET 2
+#define BASE_ACTIVE_MARKER_OFFSET 3
+#define BASE_HOUR_PIXEL_SIZE 8
+#define BASE_HOUR_COMPACT_PIXEL_SIZE 7
+#define BASE_HOUR_OVERLAY_PIXEL_SIZE 6
 #define HOUR_Y_OFFSET 0
 #endif
 
 // Distance the marker ring is inset from the nearest screen edge. Platforms can
 // override above (e.g. gabbro pulls in further for its larger round blocks).
-#ifndef RING_INSET
-#define RING_INSET 12
+#ifndef BASE_RING_INSET
+#define BASE_RING_INSET 12
 #endif
+
+// Every drawing and animation path uses the selected temporary sizes.
+#define FUTURE_MARKER_SIZE complication_scale_size(BASE_FUTURE_MARKER_SIZE, s_marker_scale, 1)
+#define ACTIVE_MARKER_SIZE complication_scale_size(BASE_ACTIVE_MARKER_SIZE, s_marker_scale, 2)
+#define COMPLETE_MARKER_SIZE complication_scale_size(BASE_COMPLETE_MARKER_SIZE, s_marker_scale, 4)
+#define FUTURE_MARKER_OFFSET \
+  complication_scale_size(BASE_FUTURE_MARKER_OFFSET, s_marker_scale, FUTURE_MARKER_SIZE / 2 + 1)
+#define ACTIVE_MARKER_OFFSET \
+  complication_scale_size(BASE_ACTIVE_MARKER_OFFSET, s_marker_scale, ACTIVE_MARKER_SIZE / 2 + 1)
+#define HOUR_PIXEL_SIZE complication_shrink_size(BASE_HOUR_PIXEL_SIZE, s_hour_shrink, 3)
+#define HOUR_COMPACT_PIXEL_SIZE \
+  complication_shrink_size(BASE_HOUR_COMPACT_PIXEL_SIZE, s_hour_shrink > 0 ? s_hour_shrink - 1 : 0, 3)
+#define HOUR_OVERLAY_PIXEL_SIZE complication_shrink_size(BASE_HOUR_OVERLAY_PIXEL_SIZE, s_hour_shrink, 3)
 
 #define SETTINGS_VERSION 2
 #define SETTINGS_DEFAULT_BACKGROUND 0x000000
@@ -225,9 +239,9 @@ static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
 
-#if defined(PBL_PLATFORM_EMERY)
-static bool s_large_layout_compact;
-#endif
+static uint8_t s_layout_shrink;
+static uint8_t s_hour_shrink;
+static int s_marker_scale = 1000;
 
 static void refresh_time(void);
 static void update_backlight_subscription(void);
@@ -645,8 +659,13 @@ static void draw_intro_hour_pixel(GContext *ctx, GPoint center, GPoint target,
   fill_centered_rect(ctx, position, size);
 }
 
-static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mode,
-                                       int32_t intro_elapsed) {
+typedef struct {
+  int tens, ones;
+  bool draw_tens;
+  int16_t pixel, x, y, digit_width, digit_gap;
+} HourGeometry;
+
+static HourGeometry hour_geometry(GRect bounds, HourMode mode) {
   bool is_24h = s_settings.time_mode == TimeModeWatch ? clock_is_24h_style() :
                                                      s_settings.time_mode == TimeMode24Hour;
   int hour = s_time.tm_hour;
@@ -684,6 +703,22 @@ static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mod
               PBL_IF_ROUND_ELSE(mode == HourModeCompact ? (bounds.size.h >= 220 ? 0 : -20)
                                                         : HOUR_Y_OFFSET,
                                 HOUR_Y_OFFSET);
+
+  return (HourGeometry) {tens, ones, draw_tens, pixel, x, y, digit_width, digit_gap};
+}
+
+static void draw_pixel_hour_with_intro(GContext *ctx, GRect bounds, HourMode mode,
+                                       int32_t intro_elapsed) {
+  const HourGeometry hour = hour_geometry(bounds, mode);
+  int16_t x = hour.x;
+  int16_t y = hour.y;
+  const int16_t pixel = hour.pixel;
+  const int16_t gap = 2;
+  const int16_t digit_width = hour.digit_width;
+  const int16_t digit_gap = hour.digit_gap;
+  const int tens = hour.tens;
+  const int ones = hour.ones;
+  const bool draw_tens = hour.draw_tens;
   GPoint center = grect_center_point(&bounds);
 
   if (draw_tens) {
@@ -1007,12 +1042,64 @@ static bool complications_visible(void) {
   return s_settings.complication_visibility == ComplicationVisibilityAlways || s_complications_revealed;
 }
 
-#if defined(PBL_PLATFORM_EMERY)
+typedef struct {
+  char label[16];
+  GRect rect;
+} RoundComplication;
+
+static RoundComplication s_round_complications[COMPLICATION_SLOT_COUNT];
+static int s_round_complication_count;
+
+static void prepare_round_complications(GRect bounds) {
+  s_round_complication_count = 0;
+  if (!PBL_IF_ROUND_ELSE(true, false) || !complications_visible()) {
+    return;
+  }
+  int16_t mid = bounds.origin.y + bounds.size.h / 2;
+  if (bounds.size.h >= 220) {
+    const int groups[2][2] = {
+      {ComplicationSlotTopLeft, ComplicationSlotTopRight},
+      {ComplicationSlotBottomLeft, ComplicationSlotBottomRight},
+    };
+    for (int group = 0; group < 2; group++) {
+      int first = s_round_complication_count;
+      for (int i = 0; i < 2; i++) {
+        RoundComplication *row = &s_round_complications[s_round_complication_count];
+        if (complication_value_label(&s_complication_values[groups[group][i]],
+                                     row->label, sizeof(row->label))) {
+          s_round_complication_count++;
+        }
+      }
+      int count = s_round_complication_count - first;
+      for (int i = 0; i < count; i++) {
+        RoundComplication *row = &s_round_complications[first + i];
+        GSize size = text_size(row->label, s_visitor_font_15, GRect(0, 0, 120, 20));
+        int16_t y = group == 0 ? mid - 30 - 22 * (count - i) : mid + 30 + 22 * i;
+        row->rect = GRect(bounds.origin.x + (bounds.size.w - size.w) / 2, y, size.w, 20);
+      }
+    }
+  } else {
+    for (int slot = 0; slot < COMPLICATION_SLOT_COUNT && s_round_complication_count < 2; slot++) {
+      RoundComplication *row = &s_round_complications[s_round_complication_count];
+      if (complication_value_label(&s_complication_values[slot], row->label, sizeof(row->label))) {
+        s_round_complication_count++;
+      }
+    }
+    for (int i = 0; i < s_round_complication_count; i++) {
+      RoundComplication *row = &s_round_complications[i];
+      GSize size = text_size(row->label, s_visitor_font_15, GRect(0, 0, 80, 20));
+      int16_t y = mid + (s_round_complication_count > 1 ? 12 : 18) + 14 * i;
+      row->rect = GRect(bounds.origin.x + (bounds.size.w - size.w) / 2, y, size.w, 18);
+    }
+  }
+}
+
 // Visitor's generated glyphs leave blank rows above the ink. Exclude those
 // rows so a short temperature isn't treated as touching a nearby lower block.
-static GRect large_text_ink_bounds(GRect box) {
+static GRect complication_text_ink_bounds(GRect box) {
 #if USE_VISITOR_COMPLICATION_FONT
-  int16_t top = s_settings.complication_size == ComplicationSizeLarge ? 12 :
+  int16_t top = PBL_IF_ROUND_ELSE(true, false) ? 7 :
+                s_settings.complication_size == ComplicationSizeLarge ? 12 :
                 s_settings.complication_size == ComplicationSizeMedium ? 7 : 10;
   box.origin.y += top;
   box.size.h = box.size.h > top ? box.size.h - top : 0;
@@ -1020,38 +1107,99 @@ static GRect large_text_ink_bounds(GRect box) {
   return box;
 }
 
-// Check the full-size ring against measured text boxes, with 2px clearance.
-// Include every resting block state so the layout stays stable as minutes pass.
-static bool large_text_hits_ring(GRect text, GRect bounds, bool tight) {
-  GPoint center = grect_center_point(&bounds);
-  int16_t radius = (bounds.size.w < bounds.size.h ? bounds.size.w : bounds.size.h) / 2 - 14;
-  if (tight) {
-    radius -= 3;
-  }
-  for (int marker = 0; marker < MARKER_COUNT; marker++) {
-    GPoint position = marker_center_for_index(center, radius, marker);
-    for (int piece = -1; piece < DOT_COUNT * 2; piece++) {
-      int16_t size = COMPLETE_MARKER_SIZE;
-      GPoint dot = position;
-      if (piece >= 0) {
-        bool active = piece < DOT_COUNT;
-        size = active ? ACTIVE_MARKER_SIZE : FUTURE_MARKER_SIZE;
-        dot = marker_dot_for_index(position, piece % DOT_COUNT,
-                                   active ? ACTIVE_MARKER_OFFSET : FUTURE_MARKER_OFFSET);
-      }
-      int16_t left = dot.x - size / 2 - 2;
-      int16_t top = dot.y - size / 2 - 2;
-      if (text.origin.x < left + size + 4 && text.origin.x + text.size.w > left &&
-          text.origin.y < top + size + 4 && text.origin.y + text.size.h > top) {
-        return true;
+static ComplicationRect collision_rect(GRect rect) {
+  return (ComplicationRect) {rect.origin.x, rect.origin.y, rect.size.w, rect.size.h};
+}
+
+// The exact digit geometry is shared with drawing, including the PT2 centering
+// correction. Check lit pixels so the empty columns of a 1 do not cause false hits.
+static bool region_hits_hour(GRect region, GRect bounds, HourMode mode) {
+  const HourGeometry hour = hour_geometry(bounds, mode);
+  for (int digit = hour.draw_tens ? 0 : 1; digit < 2; digit++) {
+    int number = digit == 0 ? hour.tens : hour.ones;
+    int16_t x = hour.x + (digit == 1 && hour.draw_tens ? hour.digit_width + hour.digit_gap : 0);
+    for (int row = 0; row < PIXEL_ROWS; row++) {
+      for (int col = 0; col < PIXEL_COLS; col++) {
+        if (DIGITS[number][row] & (1 << (PIXEL_COLS - col - 1))) {
+          ComplicationRect pixel = {x + col * (hour.pixel + 2),
+                                    hour.y + row * (hour.pixel + 2), hour.pixel, hour.pixel};
+          if (complication_rects_overlap(collision_rect(region), pixel, COMPLICATION_LAYOUT_CLEARANCE)) {
+            return true;
+          }
+        }
       }
     }
   }
   return false;
 }
 
-static bool large_layout_needs_compaction(GRect bounds, bool tight) {
-  if (!s_settings.large_blocks || !complications_visible()) {
+static int16_t layout_ring_radius(GRect bounds, bool tight) {
+  int16_t inset = complication_ring_inset(BASE_RING_INSET, s_layout_shrink,
+                                          PBL_IF_ROUND_ELSE(true, false));
+  int16_t radius = (bounds.size.w < bounds.size.h ? bounds.size.w : bounds.size.h) / 2 - inset;
+  if (tight && PBL_IF_ROUND_ELSE(false, complications_visible())) {
+    radius -= 3;
+  }
+  return radius > 0 ? radius : 1;
+}
+
+static HourMode layout_hour_mode(bool tight) {
+  return tight ? HourModeOverlay :
+         (s_hour_shrink > 0 || PBL_IF_ROUND_ELSE(complications_visible(), false)) ?
+         HourModeCompact : HourModeNormal;
+}
+
+static bool region_hits_ring(GRect region, GRect bounds, bool tight) {
+  GPoint center = grect_center_point(&bounds);
+  int16_t radius = layout_ring_radius(bounds, tight);
+  for (int marker = 0; marker < MARKER_COUNT; marker++) {
+    GPoint position = marker_center_for_index(center, radius, marker);
+    if (complication_rect_hits_marker(collision_rect(region), position.x, position.y,
+                                      COMPLETE_MARKER_SIZE, ACTIVE_MARKER_SIZE,
+                                      FUTURE_MARKER_SIZE, ACTIVE_MARKER_OFFSET,
+                                      FUTURE_MARKER_OFFSET)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool region_hits_layout(GRect region, GRect bounds, bool tight, bool check_hour) {
+  return check_hour ? region_hits_hour(region, bounds, layout_hour_mode(tight)) :
+                      region_hits_ring(region, bounds, tight);
+}
+
+// Keep bold digits when the ring moves in, but do not let its active dots or
+// completed blocks touch the digits themselves.
+static bool hour_hits_ring(GRect bounds, bool tight) {
+  const HourGeometry hour = hour_geometry(bounds, layout_hour_mode(tight));
+  for (int digit = hour.draw_tens ? 0 : 1; digit < 2; digit++) {
+    int number = digit == 0 ? hour.tens : hour.ones;
+    int16_t x = hour.x + (digit == 1 && hour.draw_tens ? hour.digit_width + hour.digit_gap : 0);
+    for (int row = 0; row < PIXEL_ROWS; row++) {
+      for (int col = 0; col < PIXEL_COLS; col++) {
+        if ((DIGITS[number][row] & (1 << (PIXEL_COLS - col - 1))) &&
+            region_hits_ring(GRect(x + col * (hour.pixel + 2), hour.y + row * (hour.pixel + 2),
+                                  hour.pixel, hour.pixel), bounds, tight)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+static bool layout_needs_compaction(GRect bounds, bool tight, bool check_hour) {
+  if (!complications_visible()) {
+    return false;
+  }
+  if (PBL_IF_ROUND_ELSE(true, false)) {
+    for (int i = 0; i < s_round_complication_count; i++) {
+      if (region_hits_layout(complication_text_ink_bounds(s_round_complications[i].rect),
+                            bounds, tight, check_hour)) {
+        return true;
+      }
+    }
     return false;
   }
   GFont font = complication_label_font();
@@ -1072,8 +1220,8 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
                              y, top.w, top.h);
       GRect bottom_rect = GRect(right ? rect.origin.x + rect.size.w - bottom.w : rect.origin.x,
                                 y + top.h, bottom.w, bottom.h);
-      if (large_text_hits_ring(large_text_ink_bounds(top_rect), bounds, tight) ||
-          large_text_hits_ring(large_text_ink_bounds(bottom_rect), bounds, tight)) {
+      if (region_hits_layout(complication_text_ink_bounds(top_rect), bounds, tight, check_hour) ||
+          region_hits_layout(complication_text_ink_bounds(bottom_rect), bounds, tight, check_hour)) {
         return true;
       }
       continue;
@@ -1096,8 +1244,8 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
                          icon_width, steps_icon_height());
       GRect number = GRect(x + icon_width + 3, rect.origin.y + (rect.size.h - size.h) / 2,
                            size.w, size.h);
-      if (large_text_hits_ring(icon, bounds, tight) ||
-          large_text_hits_ring(large_text_ink_bounds(number), bounds, tight)) {
+      if (region_hits_layout(icon, bounds, tight, check_hour) ||
+          region_hits_layout(complication_text_ink_bounds(number), bounds, tight, check_hour)) {
         return true;
       }
       continue;
@@ -1105,18 +1253,73 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
     int16_t x = right ? rect.origin.x + rect.size.w - size.w : rect.origin.x;
     int16_t y = value->display == ComplicationDisplayText ?
                 rect.origin.y : rect.origin.y + (rect.size.h - size.h) / 2;
-    if (large_text_hits_ring(large_text_ink_bounds(GRect(x, y, size.w, size.h)), bounds, tight)) {
+    if (region_hits_layout(complication_text_ink_bounds(GRect(x, y, size.w, size.h)), bounds, tight, check_hour)) {
       return true;
     }
   }
   return false;
 }
-#endif
 
-static bool round_complications_visible(void) {
-  // Mirror the rectangular logic so "Always shown" works on round watches too,
-  // not just tap-to-reveal.
-  return complications_visible();
+static void update_marker_scale(GRect bounds, bool tight) {
+  int16_t base_radius = (bounds.size.w < bounds.size.h ? bounds.size.w : bounds.size.h) / 2 -
+                        BASE_RING_INSET;
+  if (tight && !PBL_IF_ROUND_ELSE(true, false)) {
+    base_radius -= 3;
+  }
+  s_marker_scale = complication_marker_scale(base_radius, layout_ring_radius(bounds, tight),
+                                             s_layout_shrink);
+}
+
+static void select_complication_layout(GRect bounds, bool tight) {
+  // Animation frames and seconds ticks usually have identical geometry. Avoid
+  // repeating font measurements and the bounded fit search on those frames.
+  static bool valid;
+  static GRect previous_bounds;
+  static bool previous_tight, previous_large, previous_zero, previous_24h;
+  static int previous_hour, previous_size, previous_time_mode;
+  static ComplicationValue previous_values[COMPLICATION_SLOT_COUNT];
+
+  if (!complications_visible()) {
+    s_layout_shrink = 0;
+    s_hour_shrink = 0;
+    s_marker_scale = 1000;
+    s_round_complication_count = 0;
+    valid = false;
+    return;
+  }
+  bool is_24h = clock_is_24h_style();
+  if (valid && grect_equal(&bounds, &previous_bounds) && tight == previous_tight &&
+      s_settings.large_blocks == previous_large && s_settings.hour_leading_zero == previous_zero &&
+      is_24h == previous_24h && s_time.tm_hour == previous_hour &&
+      s_settings.complication_size == previous_size && s_settings.time_mode == previous_time_mode &&
+      memcmp(s_complication_values, previous_values, sizeof(previous_values)) == 0) {
+    return;
+  }
+  prepare_round_complications(bounds);
+  // Start from the original sizes for every changed input, so hiding the banner
+  // or replacing a long value restores the largest layout that fits.
+  s_layout_shrink = 0;
+  s_hour_shrink = 0;
+  update_marker_scale(bounds, tight);
+  while (s_layout_shrink < COMPLICATION_LAYOUT_MAX_SHRINK &&
+         layout_needs_compaction(bounds, tight, false)) {
+    s_layout_shrink++;
+    update_marker_scale(bounds, tight);
+  }
+  while (s_hour_shrink < COMPLICATION_LAYOUT_MAX_SHRINK &&
+         (layout_needs_compaction(bounds, tight, true) || hour_hits_ring(bounds, tight))) {
+    s_hour_shrink++;
+  }
+  previous_bounds = bounds;
+  previous_tight = tight;
+  previous_large = s_settings.large_blocks;
+  previous_zero = s_settings.hour_leading_zero;
+  previous_24h = is_24h;
+  previous_hour = s_time.tm_hour;
+  previous_size = s_settings.complication_size;
+  previous_time_mode = s_settings.time_mode;
+  memcpy(previous_values, s_complication_values, sizeof(previous_values));
+  valid = true;
 }
 
 static bool seconds_visible(void) {
@@ -1196,84 +1399,15 @@ static void draw_center_complications(GContext *ctx, GRect bounds, bool tight) {
   }
 }
 
-// Draw up to two complications (from slot_a then slot_b) stacked either just
-// above or just below the centered compact digits, for the taller round screen.
-static void draw_round_complication_stack(GContext *ctx, GRect bounds, GFont font,
-                                          int slot_a, int slot_b, bool above) {
-  char labels[2][16];
-  int n = 0;
-  if (complication_value_label(&s_complication_values[slot_a], labels[n], sizeof(labels[n]))) {
-    n++;
-  }
-  if (complication_value_label(&s_complication_values[slot_b], labels[n], sizeof(labels[n]))) {
-    n++;
-  }
-  if (n == 0) {
-    return;
-  }
-
-  const int16_t line_h = 22;
-  const int16_t gap = 30;  // clearance from the centered compact digits
-  int16_t mid = bounds.origin.y + bounds.size.h / 2;
-  GRect measure_rect = GRect(0, 0, 120, 20);
-
-  for (int i = 0; i < n; i++) {
-    int16_t y = above ? mid - gap - line_h * (n - i) : mid + gap + line_h * i;
-    GSize size = text_size(labels[i], font, measure_rect);
-    int16_t x = bounds.origin.x + (bounds.size.w - size.w) / 2;
-    graphics_draw_text(ctx, labels[i], font, GRect(x, y, size.w, 20),
-                       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-  }
-}
-
 static void draw_round_center_complications(GContext *ctx, GRect bounds) {
-  if (!PBL_IF_ROUND_ELSE(true, false)) {
+  (void)bounds;
+  if (!PBL_IF_ROUND_ELSE(true, false) || !complications_visible()) {
     return;
   }
-
-  if (!round_complications_visible()) {
-    return;
-  }
-
-  GFont font = s_visitor_font_15;
   graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
-
-  // gabbro's taller round screen fits two lines above the digits and two below;
-  // chalk only has room for two stacked below.
-  if (bounds.size.h >= 220) {
-    draw_round_complication_stack(ctx, bounds, font, ComplicationSlotTopLeft,
-                                  ComplicationSlotTopRight, true);
-    draw_round_complication_stack(ctx, bounds, font, ComplicationSlotBottomLeft,
-                                  ComplicationSlotBottomRight, false);
-    return;
-  }
-
-  char labels[2][16];
-  int count = 0;
-  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT && count < 2; slot++) {
-    if (complication_value_label(&s_complication_values[slot], labels[count],
-                                 sizeof(labels[count]))) {
-      count++;
-    }
-  }
-
-  if (count == 0) {
-    return;
-  }
-
-  GRect measure_rect = GRect(0, 0, 80, 20);
-  GSize first_size = text_size(labels[0], font, measure_rect);
-  int16_t first_x = bounds.origin.x + (bounds.size.w - first_size.w) / 2;
-  int16_t y = bounds.origin.y + bounds.size.h / 2 + (count > 1 ? 12 : 18);
-  int16_t height = 18;
-
-  graphics_draw_text(ctx, labels[0], font, GRect(first_x, y, first_size.w, height),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-
-  if (count > 1) {
-    GSize second_size = text_size(labels[1], font, measure_rect);
-    int16_t second_x = bounds.origin.x + (bounds.size.w - second_size.w) / 2;
-    graphics_draw_text(ctx, labels[1], font, GRect(second_x, y + 14, second_size.w, height),
+  for (int i = 0; i < s_round_complication_count; i++) {
+    RoundComplication *row = &s_round_complications[i];
+    graphics_draw_text(ctx, row->label, s_visitor_font_15, row->rect,
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
   }
 }
@@ -1287,28 +1421,10 @@ static void canvas_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   GRect content_bounds = layer_get_unobstructed_bounds(layer);
   bool is_obstructed = !grect_equal(&bounds, &content_bounds);
-  bool compact_hour = PBL_IF_ROUND_ELSE(round_complications_visible(), false);
-#if defined(PBL_PLATFORM_EMERY)
-  s_large_layout_compact = large_layout_needs_compaction(content_bounds, is_obstructed);
-  bool large_details = s_large_layout_compact;
-  compact_hour = compact_hour || large_details;
-#endif
-  HourMode hour_mode = is_obstructed ? HourModeOverlay :
-                       compact_hour ? HourModeCompact :
-                       HourModeNormal;
+  select_complication_layout(content_bounds, is_obstructed);
+  HourMode hour_mode = layout_hour_mode(is_obstructed);
   GPoint center = grect_center_point(&content_bounds);
-  int16_t radius = (content_bounds.size.w < content_bounds.size.h ?
-                    content_bounds.size.w : content_bounds.size.h) / 2 - RING_INSET;
-  if (is_obstructed && PBL_IF_ROUND_ELSE(false, complications_visible())) {
-    radius -= 3;
-#if defined(PBL_PLATFORM_EMERY)
-    // The overlay compresses the vertical space as well as the ring. Leave
-    // clearance for the top/bottom text and use the smaller overlay hour.
-    if (large_details) {
-      radius -= 4;
-    }
-#endif
-  }
+  int16_t radius = layout_ring_radius(content_bounds, is_obstructed);
 
   graphics_context_set_fill_color(ctx, GColorFromHEX(s_settings.background_color));
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);

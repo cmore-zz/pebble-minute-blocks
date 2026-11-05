@@ -47,7 +47,11 @@ inside the display; Normal mode retains the outward pulse.
 
 ## Build
 
-Built and checked with Pebble SDK 4.33.1 for all seven target platforms.
+Built and checked with Pebble SDK 4.44 for all seven target platforms.
+
+The app explicitly uses manifest version 1 to preserve its existing weather and
+location access. SDK 4.44 defaults to manifest version 2; switching to that
+permission model will be part of adding optional plugin complications.
 
 The Pebble SDK needs its bundled ARM toolchain, so the included `justfile`
 clears host compiler overrides such as `CC=/opt/homebrew/bin/gcc-15` before
@@ -64,8 +68,20 @@ C compiler:
 pebble build
 ```
 
-Run the settings, weather, and cache expiry regression tests with `just test`
+Run the settings, weather expiry, hour layout, and complication value regression tests with `just test`
 (Node.js and a C compiler required).
+
+## Complication Data
+
+Built-in sources prepare bounded `ComplicationValue` records from a snapshot of
+the clock, cached weather, battery, connection state, and cached steps. Rectangular
+drawing, round-screen labels, and PT2 overlap checks all consume those records.
+Unavailable readings retain their existing placeholders; an empty slot has no
+display value. Source IDs and saved corner choices retain their existing values.
+
+This separates data acquisition from presentation so a future phone-side plugin
+adapter can supply values without adding source-specific logic to each renderer.
+Plugin discovery, subscriptions, permissions, and settings are not enabled yet.
 
 ## Install
 

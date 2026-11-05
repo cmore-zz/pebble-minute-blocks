@@ -1,6 +1,7 @@
 #include <pebble.h>
 #include "weather_cache.h"
 #include "hour_layout.h"
+#include "complication_value.h"
 
 #define MARKER_COUNT 12
 #define DOT_COUNT 4
@@ -138,16 +139,6 @@ enum {
 };
 
 enum {
-  ComplicationNone = 0,
-  ComplicationDate = 1,
-  ComplicationWeather = 2,
-  ComplicationForecast = 3,
-  ComplicationBattery = 4,
-  ComplicationBluetooth = 5,
-  ComplicationSteps = 6,
-};
-
-enum {
   ComplicationSlotTopLeft = 0,
   ComplicationSlotTopRight = 1,
   ComplicationSlotBottomRight = 2,
@@ -229,6 +220,7 @@ static bool s_intro_started;
 static time_t s_intro_start_time;
 static uint16_t s_intro_start_ms;
 static Settings s_settings;
+static ComplicationValue s_complication_values[COMPLICATION_SLOT_COUNT];
 static GFont s_visitor_font_15;
 static GFont s_visitor_font_20;
 static GFont s_visitor_font_25;
@@ -986,83 +978,29 @@ static void refresh_steps(void) {
   s_steps = steps_complication_enabled() ? steps_today() : -1;
 }
 
-static void format_steps(char *buffer, size_t size) {
-  int steps = s_steps;
-
-  if (steps < 0) {
-    snprintf(buffer, size, "--");
-  } else if (steps >= 10000) {
-    snprintf(buffer, size, "%dK", (steps + 500) / 1000);
-  } else if (steps >= 1000) {
-    snprintf(buffer, size, "%d", (steps / 100) * 100);
-  } else {
-    snprintf(buffer, size, "%d", steps);
+static void prepare_complication_values(void) {
+  const ComplicationInputs inputs = {
+    .date = &s_time,
+    .now = time(NULL),
+    .weather_enabled = s_settings.weather_enabled,
+    .weather_available = s_settings.weather_available,
+    .weather_updated_at = s_settings.weather_updated_at,
+    .celsius = s_settings.weather_units == WeatherUnitsC,
+    .temperature = s_settings.weather_temp,
+    .low = s_settings.weather_low,
+    .high = s_settings.weather_high,
+    .battery_percent = s_battery_state.charge_percent,
+    .bluetooth_connected = s_bluetooth_connected,
+    .steps = s_steps,
+  };
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    complication_builtin_value(s_settings.complications[slot], &inputs,
+                               &s_complication_values[slot]);
   }
 }
 
-static bool weather_visible(void) {
-  return s_settings.weather_enabled && s_settings.weather_available &&
-         weather_cache_is_fresh(time(NULL), s_settings.weather_updated_at);
-}
-
-static bool format_complication_text(int type, char *buffer, size_t size) {
-  char date_label[8];
-  char steps_text[12];
-  const char *weather_suffix = s_settings.weather_units == WeatherUnitsC ? "C" : "F";
-
-  switch (type) {
-    case ComplicationDate:
-      strftime(date_label, sizeof(date_label), "%a", &s_time);
-      snprintf(buffer, size, "%s %02d", date_label, s_time.tm_mday);
-      return true;
-    case ComplicationWeather:
-      if (weather_visible()) {
-        snprintf(buffer, size, "%d%s", s_settings.weather_temp, weather_suffix);
-      } else {
-        snprintf(buffer, size, "--");
-      }
-      return true;
-    case ComplicationForecast:
-      if (weather_visible()) {
-        snprintf(buffer, size, "%d-%d%s", s_settings.weather_low, s_settings.weather_high,
-                 weather_suffix);
-      } else {
-        snprintf(buffer, size, "--");
-      }
-      return true;
-    case ComplicationBattery:
-      snprintf(buffer, size, "%d%%", s_battery_state.charge_percent);
-      return true;
-    case ComplicationBluetooth:
-      snprintf(buffer, size, "%s", s_bluetooth_connected ? "BT" : "--");
-      return true;
-    case ComplicationSteps:
-      format_steps(steps_text, sizeof(steps_text));
-      snprintf(buffer, size, "%s", steps_text);
-      return true;
-    default:
-      buffer[0] = '\0';
-      return false;
-  }
-}
-
-static int16_t complication_width(int type) {
-  switch (type) {
-    case ComplicationDate:
-      return complication_text_width(44, 34, 54);
-    case ComplicationForecast:
-      return complication_text_width(86, 70, 98);
-    case ComplicationWeather:
-      return complication_text_width(54, 46, 66);
-    case ComplicationBattery:
-      return complication_text_width(62, 52, 66);
-    case ComplicationBluetooth:
-      return complication_text_width(44, 38, 48);
-    case ComplicationSteps:
-      return complication_text_width(70, 58, 82);
-    default:
-      return 0;
-  }
+static int16_t complication_value_width(const ComplicationValue *value) {
+  return complication_text_width(value->widths[0], value->widths[1], value->widths[2]);
 }
 
 static bool complications_visible(void) {
@@ -1118,20 +1056,17 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
   }
   GFont font = complication_label_font();
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
-    int type = s_settings.complications[slot];
-    char text[32];
-    if (!format_complication_text(type, text, sizeof(text))) {
+    const ComplicationValue *value = &s_complication_values[slot];
+    if (value->display == ComplicationDisplayNone) {
       continue;
     }
     bool right = slot == ComplicationSlotTopRight || slot == ComplicationSlotBottomRight;
-    int16_t height = type == ComplicationDate ? complication_box_height() : complication_row_height();
-    GRect rect = complication_slot_rect(bounds, slot, complication_width(type), height, tight);
-    if (type == ComplicationDate) {
-      char weekday[8], day[4];
-      strftime(weekday, sizeof(weekday), "%a", &s_time);
-      snprintf(day, sizeof(day), "%02d", s_time.tm_mday);
-      GSize top = text_size(weekday, font, rect);
-      GSize bottom = text_size(day, font, rect);
+    int16_t height = value->display == ComplicationDisplayStacked ?
+                     complication_box_height() : complication_row_height();
+    GRect rect = complication_slot_rect(bounds, slot, complication_value_width(value), height, tight);
+    if (value->display == ComplicationDisplayStacked) {
+      GSize top = text_size(value->text, font, rect);
+      GSize bottom = text_size(value->detail, font, rect);
       int16_t y = rect.origin.y + (rect.size.h - top.h - bottom.h) / 2;
       GRect top_rect = GRect(right ? rect.origin.x + rect.size.w - top.w : rect.origin.x,
                              y, top.w, top.h);
@@ -1143,25 +1078,17 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
       }
       continue;
     }
-    // Number and suffix are drawn separately with a 1px gap. Measure them
-    // separately too, including the unavailable-weather placeholder.
-    GSize size;
-    size_t length = strlen(text);
-    bool suffix = type == ComplicationBattery ||
-                  ((type == ComplicationWeather || type == ComplicationForecast) && weather_visible());
-    if (suffix && length > 0) {
-      char unit[2] = {text[length - 1], '\0'};
-      text[length - 1] = '\0';
-      size = text_size(text, font, rect);
-      GSize unit_size = text_size(unit, font, rect);
+    // Measure the same text and optional suffix used for drawing. Unavailable
+    // weather is plain text, with no unit or extra suffix gap.
+    GSize size = text_size(value->text, font, rect);
+    if (value->suffix[0] != '\0') {
+      GSize unit_size = text_size(value->suffix, font, rect);
       size.w += 1 + unit_size.w;
       if (unit_size.h > size.h) {
         size.h = unit_size.h;
       }
-    } else {
-      size = text_size(text, font, rect);
     }
-    if (type == ComplicationSteps) {
+    if (value->display == ComplicationDisplaySteps) {
       int16_t icon_width = steps_icon_width();
       int16_t width = icon_width + 3 + size.w;
       int16_t x = right ? rect.origin.x + rect.size.w - width : rect.origin.x;
@@ -1176,9 +1103,8 @@ static bool large_layout_needs_compaction(GRect bounds, bool tight) {
       continue;
     }
     int16_t x = right ? rect.origin.x + rect.size.w - size.w : rect.origin.x;
-    int16_t y = type == ComplicationBluetooth ||
-                 ((type == ComplicationWeather || type == ComplicationForecast) && !weather_visible()) ?
-                 rect.origin.y : rect.origin.y + (rect.size.h - size.h) / 2;
+    int16_t y = value->display == ComplicationDisplayText ?
+                rect.origin.y : rect.origin.y + (rect.size.h - size.h) / 2;
     if (large_text_hits_ring(large_text_ink_bounds(GRect(x, y, size.w, size.h)), bounds, tight)) {
       return true;
     }
@@ -1223,66 +1149,34 @@ static void draw_seconds_overlay(GContext *ctx, GPoint center, int16_t radius) {
   draw_marker_pixel(ctx, marker_center, FUTURE_MARKER_SIZE);
 }
 
-static void draw_complication(GContext *ctx, GRect bounds, int slot, int type, bool tight) {
-  const char *weather_suffix = s_settings.weather_units == WeatherUnitsC ? "C" : "F";
-  int16_t row_height = complication_row_height();
-  int16_t box_height = type == ComplicationDate ? complication_box_height() : row_height;
-  int16_t width = complication_width(type);
+static void draw_complication(GContext *ctx, GRect bounds, int slot,
+                              const ComplicationValue *value, bool tight) {
+  int16_t box_height = value->display == ComplicationDisplayStacked ?
+                       complication_box_height() : complication_row_height();
+  int16_t width = complication_value_width(value);
+  if (value->display == ComplicationDisplayNone || width == 0) {
+    return;
+  }
   GRect rect = complication_slot_rect(bounds, slot, width, box_height, tight);
   GTextAlignment alignment = (slot == ComplicationSlotTopRight ||
                               slot == ComplicationSlotBottomRight) ?
                              GTextAlignmentRight : GTextAlignmentLeft;
 
-  if (type == ComplicationNone || width == 0) {
-    return;
-  }
-
-  switch (type) {
-    case ComplicationDate: {
-      char date_label[8];
-      char date_number[4];
-      strftime(date_label, sizeof(date_label), "%a", &s_time);
-      snprintf(date_number, sizeof(date_number), "%02d", s_time.tm_mday);
-      draw_stacked_text(ctx, date_label, date_number, rect, alignment);
+  switch (value->display) {
+    case ComplicationDisplayStacked:
+      draw_stacked_text(ctx, value->text, value->detail, rect, alignment);
       break;
-    }
-    case ComplicationWeather:
-      if (weather_visible()) {
-        char weather_number[8];
-        snprintf(weather_number, sizeof(weather_number), "%d", s_settings.weather_temp);
-        draw_aligned_number_with_suffix(ctx, weather_number, weather_suffix, rect, alignment);
-      } else {
-        draw_aligned_text(ctx, "--", rect, alignment);
-      }
+    case ComplicationDisplayNumber:
+      draw_aligned_number_with_suffix(ctx, value->text, value->suffix, rect, alignment);
       break;
-    case ComplicationForecast:
-      if (weather_visible()) {
-        char forecast_text[12];
-        snprintf(forecast_text, sizeof(forecast_text), "%d-%d",
-                 s_settings.weather_low, s_settings.weather_high);
-        draw_aligned_number_with_suffix(ctx, forecast_text, weather_suffix, rect, alignment);
-      } else {
-        draw_aligned_text(ctx, "--", rect, alignment);
-      }
+    case ComplicationDisplaySteps:
+      draw_aligned_steps(ctx, value->text, rect, alignment);
       break;
-    case ComplicationBattery: {
-      char battery_number[4];
-      snprintf(battery_number, sizeof(battery_number), "%d", s_battery_state.charge_percent);
-      draw_aligned_number_with_suffix(ctx, battery_number, "%", rect, alignment);
+    case ComplicationDisplayText:
+      draw_aligned_text(ctx, value->text, rect, alignment);
       break;
-    }
-    case ComplicationBluetooth: {
-      char bluetooth_text[4];
-      snprintf(bluetooth_text, sizeof(bluetooth_text), "%s", s_bluetooth_connected ? "BT" : "--");
-      draw_aligned_text(ctx, bluetooth_text, rect, alignment);
+    case ComplicationDisplayNone:
       break;
-    }
-    case ComplicationSteps: {
-      char steps_text[12];
-      format_steps(steps_text, sizeof(steps_text));
-      draw_aligned_steps(ctx, steps_text, rect, alignment);
-      break;
-    }
   }
 }
 
@@ -1298,7 +1192,7 @@ static void draw_center_complications(GContext *ctx, GRect bounds, bool tight) {
   graphics_context_set_text_color(ctx, GColorFromHEX(s_settings.complication_color));
 
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
-    draw_complication(ctx, bounds, slot, s_settings.complications[slot], tight);
+    draw_complication(ctx, bounds, slot, &s_complication_values[slot], tight);
   }
 }
 
@@ -1308,10 +1202,10 @@ static void draw_round_complication_stack(GContext *ctx, GRect bounds, GFont fon
                                           int slot_a, int slot_b, bool above) {
   char labels[2][16];
   int n = 0;
-  if (format_complication_text(s_settings.complications[slot_a], labels[n], sizeof(labels[n]))) {
+  if (complication_value_label(&s_complication_values[slot_a], labels[n], sizeof(labels[n]))) {
     n++;
   }
-  if (format_complication_text(s_settings.complications[slot_b], labels[n], sizeof(labels[n]))) {
+  if (complication_value_label(&s_complication_values[slot_b], labels[n], sizeof(labels[n]))) {
     n++;
   }
   if (n == 0) {
@@ -1357,7 +1251,7 @@ static void draw_round_center_complications(GContext *ctx, GRect bounds) {
   char labels[2][16];
   int count = 0;
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT && count < 2; slot++) {
-    if (format_complication_text(s_settings.complications[slot], labels[count],
+    if (complication_value_label(&s_complication_values[slot], labels[count],
                                  sizeof(labels[count]))) {
       count++;
     }
@@ -1386,6 +1280,9 @@ static void draw_round_center_complications(GContext *ctx, GRect bounds) {
 
 static void canvas_update_proc(Layer *layer, GContext *ctx) {
   refresh_time();
+  if (complications_visible()) {
+    prepare_complication_values();
+  }
 
   GRect bounds = layer_get_bounds(layer);
   GRect content_bounds = layer_get_unobstructed_bounds(layer);

@@ -11,6 +11,7 @@
     "displayName": "Minute Blocks",
     "uuid": "4e10c644-2684-4604-aaf3-be90703b8d95",
     "sdkVersion": "3",
+    "manifestVersion": 1,
     "enableMultiJS": true,
     "targetPlatforms": [
       "aplite",

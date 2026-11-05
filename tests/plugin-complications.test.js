@@ -138,12 +138,13 @@ function liveFixture() {
   return { manager, subs, sent, timers, advance(ms) { clock += ms; } };
 }
 
-test('acknowledged identical readings skip sends until renewal and null means unspecified expiry', () => {
+test('identical text and expiry skip sends; shortened or extended validity is delivered', () => {
   const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
   f.subs[0].onData({ instances: [preference()] });
   const sub = f.subs[1];
   sub.onData(data(shortText('72F')));
   const count = f.sent.length;
+  f.advance(123); // Callback jitter must not turn the same absolute expiry into a new deadline.
   sub.onData(data(shortText('72F')));
   assert.equal(f.sent.length, count);
   f.advance(280000);
@@ -166,22 +167,22 @@ test('binding comparison ignores metadata and changes only the affected slot', (
   a.onData(data(shortText('OLD'))); assert.equal(f.sent.length, sent);
 });
 
-test('denied source retries at 1, 5, 15 minutes then stops without disturbing healthy slots', () => {
+test('denied source retries at 1, 5, 15 then 30 minutes without disturbing healthy slots', () => {
   const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1, PluginFavoriteTopRight: 2 });
   f.subs[0].onData({ instances: [preference(), preference()] });
   const healthy = f.subs[2];
   healthy.onData(data(shortText('73F')));
   let broken = f.subs[1];
-  for (const delay of [60000, 300000, 900000]) {
+  for (const delay of [60000, 300000, 900000, 1800000, 1800000]) {
     broken.onError({ code: 'PERMISSION_DENIED' });
     const timer = f.timers.at(-1); assert.equal(timer.delay, delay);
     timer.fn(); broken = f.subs.at(-1);
     assert.equal(healthy.stopped, false); assert.equal(f.subs[0].stopped, false);
   }
   broken.onError({ code: 'PERMISSION_DENIED' });
-  assert.equal(f.timers.length, 3);
+  assert.equal(f.timers.length, 6);
   broken.onData(data(shortText('72F')));
-  assert.equal(f.sent.at(-1).PluginText, '72F', 'grant recovers existing subscription after retry cap');
+  assert.equal(f.sent.at(-1).PluginText, '72F', 'grant recovers existing subscription during slow recovery');
 });
 
 test('spontaneous recovery cancels pending retry and late callbacks cannot restart it', () => {
@@ -261,4 +262,50 @@ test('late delivery acknowledgements cannot suppress a newer recovery reading', 
   subs[1].onData(data(shortText('72F')));
   assert.equal(sent.length, count + 1);
   assert.equal(sent.at(-1).message.PluginText, '72F');
+});
+
+test('an early expiry extension is delivered without depending on another provider callback', () => {
+  const f = liveFixture(); f.manager.start({ PluginFavoriteTopLeft: 1 });
+  f.subs[0].onData({ instances: [preference()] });
+  const envelope = expiry => ({ ...data(shortText('72F')), validUntilMs: expiry });
+  f.subs[1].onData(envelope(now + 120000));
+  const count = f.sent.length;
+  f.subs[1].onData(envelope(now + 600000));
+  assert.equal(f.sent.length, count + 1);
+  assert.equal(f.sent.at(-1).PluginTTL, 600);
+  f.advance(121000); // No more provider callbacks: the watch already has the extension.
+  assert.equal(f.sent.at(-1).PluginTTL, 600);
+});
+
+test('unchanged starts preserve healthy subscriptions and pending failure recovery', () => {
+  const f = liveFixture();
+  const settings = { PluginFavoriteTopLeft: 1, PluginFavoriteTopRight: 2, WeatherEnabled: 0 };
+  f.manager.start(settings);
+  f.subs[0].onData({ instances: [preference(), preference()] });
+  f.subs[1].onData(data(shortText('72F')));
+  f.subs[2].onError({});
+  const count = f.sent.length, timer = f.timers[0];
+  f.manager.start(settings);
+  f.manager.start({ ...settings, WeatherEnabled: 1, HourColor: 123 });
+  assert.equal(f.subs.length, 3); assert.equal(f.sent.length, count);
+  assert.equal(timer.cancelled, false); timer.fn();
+  assert.equal(f.subs.length, 4); assert.equal(f.subs[1].stopped, false);
+});
+
+test('preferences recover after the fast retry budget with weather disabled', () => {
+  const f = liveFixture();
+  f.manager.start({ PluginFavoriteTopLeft: 1, WeatherEnabled: 0 });
+  for (const delay of [60000, 300000, 900000, 1800000]) {
+    f.subs.at(-1).onError({});
+    assert.equal(f.timers.at(-1).delay, delay);
+    f.timers.at(-1).fn();
+  }
+  f.subs.at(-1).onData({ instances: [preference()] });
+  f.subs.at(-1).onData(data(shortText('72F')));
+  assert.equal(f.sent.at(-1).PluginText, '72F');
+  f.subs.at(-1).onError({});
+  const late = f.timers.at(-1);
+  f.manager.start({});
+  const count = f.subs.length;
+  late.fn(); assert.equal(f.subs.length, count);
 });

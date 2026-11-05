@@ -28,7 +28,7 @@ function favorite(settings, slot) {
 }
 
 function create(Pebble, send, now, schedule, cancel) {
-  var selections = [], slots = [], preferences, session = 0;
+  var selections = [], slots = [], preferences, session = 0, apiAvailable;
   var delivered = [], revisions = [];
   var delays = [60000, 300000, 900000];
   function stop(state) {
@@ -38,7 +38,8 @@ function create(Pebble, send, now, schedule, cancel) {
     if (state.sub) state.sub.unsubscribe();
   }
   // Errors do not end SDK subscriptions. Keep listening for recovery, while
-  // retrying only this source a bounded number of times if it stays broken.
+  // retrying only this source. After the initial attempts, probe every half hour
+  // independently of watch weather requests, without resetting healthy sources.
   function subscribe(options, onData, onError) {
     var state = { active: true, attempts: 0, timer: null, generation: 0 };
     function recovered() {
@@ -54,13 +55,13 @@ function create(Pebble, send, now, schedule, cancel) {
       function failed() {
         if (!current()) return;
         onError();
-        if (!schedule || state.timer != null || state.attempts >= delays.length) return;
+        if (!schedule || state.timer != null) return;
         var attempt = ++state.attempts;
         state.timer = schedule(function() {
           if (!current() || state.timer == null || state.attempts !== attempt) return;
           state.timer = null;
           connect();
-        }, delays[attempt - 1]);
+        }, delays[attempt - 1] || 1800000);
       }
       var config = {};
       Object.keys(options).forEach(function(key) { config[key] = options[key]; });
@@ -71,12 +72,14 @@ function create(Pebble, send, now, schedule, cancel) {
     connect();
     return state;
   }
-  function publish(slot, text, ttl) {
+  function publish(slot, text, ttl, deadline) {
     if (ttl <= 0) text = '';
     var previous = delivered[slot];
-    var expires = now() + ttl * 1000, generation = session;
-    if (previous && previous.text === text && (!text ||
-        (previous.expires <= expires && previous.expires - now() > 30000))) return;
+    var expires = deadline === undefined ? now() + ttl * 1000 : deadline;
+    var generation = session;
+    // A changed deadline must reach the watch even if text is unchanged; the
+    // provider may never send another callback before the old deadline.
+    if (previous && previous.text === text && (!text || previous.expires === expires)) return;
     var revision = (revisions[slot] || 0) + 1;
     revisions[slot] = revision; delivered[slot] = null;
     send({ PluginSlot: slot, PluginFavorite: selections[slot], PluginText: text,
@@ -114,20 +117,30 @@ function create(Pebble, send, now, schedule, cancel) {
         var instance = data && Array.isArray(data.instances) && data.instances[target[3]];
         var text = textFor(instance && instance.properties && instance.properties[target[2]]);
         var expires = data && data.validUntilMs;
-        var ttl = typeof expires === 'number' && isFinite(expires) ?
-          Math.max(0, Math.min(MAX_AGE_SEC, Math.floor((expires - now()) / 1000))) :
-          expires == null ? 60 : 0;
-        publish(slot, text, text ? ttl : 0);
+        var observedAt = now();
+        var deadline = typeof expires === 'number' && isFinite(expires) ?
+          Math.min(expires, observedAt + MAX_AGE_SEC * 1000) :
+          expires == null ? observedAt + 60000 : observedAt;
+        var ttl = Math.max(0, Math.floor((deadline - observedAt) / 1000));
+        publish(slot, text, text ? ttl : 0, text && ttl > 0 ? deadline : undefined);
       }, function() { publish(slot, '', 0); });
     });
   }
   function available() { return typeof Pebble.subscribeToSource === 'function'; }
   function start(settings) {
+    var next = SLOT_KEYS.map(function(_, slot) { return favorite(settings, slot); });
+    var supported = available();
+    // Weather refreshes and unrelated settings saves must not blank live slots.
+    // Failed sources have their own timers, including after the fast retry budget.
+    if (apiAvailable === supported && next.every(function(value, slot) {
+      return value === selections[slot];
+    })) return;
+    apiAvailable = supported;
     session++;
     stop(preferences);
     slots.forEach(function(slot) { stop(slot.subscription); });
     slots = []; delivered = [];
-    selections = SLOT_KEYS.map(function(_, slot) { return favorite(settings, slot); });
+    selections = next;
     selections.forEach(function(value, slot) { if (value) publish(slot, '', 0); });
     if (!available() || !selections.some(function(value) { return value > 0; })) return;
     preferences = subscribe({ category: 'preferences', item: 'complications', maxStalenessMs: 60000 },

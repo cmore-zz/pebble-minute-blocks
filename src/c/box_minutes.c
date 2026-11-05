@@ -1146,6 +1146,7 @@ static void measure_complication_regions(GRect bounds, bool tight) {
   s_complication_region_count = 0;
   if (PBL_IF_ROUND_ELSE(true, false)) {
     for (int i = 0; i < s_round_complication_count; i++) {
+      s_measuring_slot = i; // Round labels occupy separate rows.
       add_complication_region(complication_text_ink_bounds(s_round_complications[i].rect));
     }
     return;
@@ -1205,6 +1206,7 @@ static void apply_plugin_fallbacks(uint8_t mask) {
 
 static uint8_t resolve_plugin_overlaps(GRect bounds, bool tight) {
   uint8_t fallback = 0;
+  // Round layouts stack centred labels on separate rows; no opposing slots.
   if (PBL_IF_ROUND_ELSE(true, false) || !s_plugin_mask) return 0;
   // A fallback can itself meet another plugin; resolve until no plugin collides.
   for (int pass = 0; pass < COMPLICATION_SLOT_COUNT; pass++) {

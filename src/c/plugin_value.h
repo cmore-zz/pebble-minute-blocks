@@ -37,20 +37,24 @@ static inline bool plugin_value_apply(ComplicationValue *value, const PluginRead
   return true;
 }
 
-// Return only plugin slots involved in an actual ink collision with another
-// slot. Built-in values retain their existing layout and text size.
+// Select one colliding plugin per pass, widest ink first (right/later slot
+// breaks ties). Re-measure its built-in fallback before sacrificing another.
 static inline uint8_t plugin_overlap_mask(const ComplicationRect *regions,
                                           const uint8_t *slots, int count,
                                           uint8_t plugin_mask) {
-  uint8_t result = 0;
+  int selected = -1, width = -1;
   for (int i = 0; i < count; i++) {
-    for (int j = i + 1; j < count; j++) {
-      if (slots[i] != slots[j] && complication_rects_overlap(regions[i], regions[j], 1)) {
-        result |= ((1u << slots[i]) | (1u << slots[j])) & plugin_mask;
+    if (!(plugin_mask & (1u << slots[i]))) continue;
+    for (int j = 0; j < count; j++) {
+      if (slots[i] != slots[j] && complication_rects_overlap(
+          regions[i], regions[j], COMPLICATION_LAYOUT_CLEARANCE) &&
+          (regions[i].w > width || (regions[i].w == width && slots[i] > selected))) {
+        selected = slots[i];
+        width = regions[i].w;
       }
     }
   }
-  return result;
+  return selected < 0 ? 0 : 1u << selected;
 }
 
 static inline bool plugin_reading_visible(const PluginReading *reading, time_t now) {

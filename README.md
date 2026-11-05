@@ -95,14 +95,16 @@ characters; degree signs are removed, dashes normalized, numbers rounded to one
 decimal, and unsupported characters omitted. Oversized readings fall back rather
 than cutting digits off a number. Images, series, timestamps and actions
 are not supported in this first version. On rectangular watches, opposing plugin
-readings that overlap another slot fall back to their built-in readings, keeping
-text size unchanged. Actual ink bounds determine whether they fit.
+readings that overlap another slot fall back one at a time, widest first,
+re-measuring after each fallback to preserve the other reading when it fits.
+Text size stays unchanged. Actual ink bounds determine whether they fit.
 
 Missing APIs, disabled plugins, denied permissions, missing favorites, unsupported
 shapes and source errors leave built-ins working. A source error clears its live
-reading and retries only that subscription after 1, 5, and 15 minutes, then stops
-retrying until the next settings/session refresh. Later source updates can still
-recover it, including after a permission grant. Unrelated slots keep running.
+reading and retries only that subscription after 1, 5, and 15 minutes, then
+every 30 minutes while unavailable, even with built-in weather disabled. Later
+source updates can still recover it, including after a permission grant. Unrelated slots keep running,
+and unchanged favorite choices never restart subscriptions on weather refresh.
 Readings expire at the provider's validity limit, capped at 15 minutes (one minute
 when the validity limit is omitted or null), and fall back on the next redraw, normally
 within a minute. Live readings are not persisted. Favorite choices are retained
@@ -113,9 +115,10 @@ single AppMessage queue with coalescing. The queue recomputes remaining lifetime
 at every send and retry, clearing values that expired while waiting. Failed
 plugin settings retry after 1 and 5 minutes, then every 15 minutes until delivered
 or replaced; plugin readings wait for settings acknowledgement while other
-traffic continues. Identical acknowledged readings are skipped until renewal is
-needed, and extending an unchanged watch reading does not force a redraw. Changing settings
-unsubscribes old sources and ignores their late callbacks. Only favorite choices,
+traffic continues. Acknowledged readings with identical text and expiry are
+skipped; changed expiry times are always delivered even if the text is unchanged.
+Extending an unchanged watch reading does not force a redraw. Changing favorite
+choices unsubscribes old sources and ignores their late callbacks. Only favorite choices,
 not live values, write to watch persistence.
 
 Plugins are still a preview in the Pebble companion app. This branch can be tested

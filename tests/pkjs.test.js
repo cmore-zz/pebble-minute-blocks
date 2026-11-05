@@ -215,3 +215,26 @@ test('each plugin selector follows its own built-in selector', () => {
   assert.ok(html.indexOf('id="PluginFavoriteBottomRight"') < html.indexOf('id="complicationBottomLeft"'));
   assert.ok(html.indexOf('id="complicationBottomLeft"') < html.indexOf('id="PluginFavoriteBottomLeft"'));
 });
+
+test('weather refresh does not restart unchanged plugin subscriptions or clear readings', () => {
+  const subs = [];
+  const f = phone('aplite', JSON.stringify({ PluginFavoriteTopLeft: 1, WeatherEnabled: 0 }), {
+    subscribeToSource(config) {
+      const sub = { ...config, stopped: false, unsubscribe() { this.stopped = true; } };
+      subs.push(sub); return sub;
+    }
+  });
+  f.events.ready();
+  const text = text => ({ shortText: { text } });
+  subs[0].onData({ instances: [{ properties: {
+    category: text('demo'), item: text('reading'), property: text('value'),
+    index: { numericValue: { value: 0 } }
+  } }] });
+  subs[1].onData({ validUntilMs: Date.now() + 600000,
+    instances: [{ properties: { value: text('72F') } }] });
+  const count = f.messages.filter(m => m.PluginSlot !== undefined).length;
+  f.events.appmessage({ payload: { WeatherRequest: 1 } });
+  assert.equal(subs.length, 2);
+  assert.equal(subs[0].stopped, false); assert.equal(subs[1].stopped, false);
+  assert.equal(f.messages.filter(m => m.PluginSlot !== undefined).length, count);
+});

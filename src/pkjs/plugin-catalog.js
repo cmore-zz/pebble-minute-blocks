@@ -30,6 +30,9 @@ function catalog(Pebble) {
           });
         });
         source.items.forEach(function(item) {
+          // Watch settings are configuration metadata, like preferences above.
+          if (source.category === 'watch' && ['switch_setting', 'number_setting',
+              'text_setting', 'app_setting'].indexOf(item) >= 0) return;
           // Subscribing to this source performs an action, not a passive read.
           if (source.category === 'phone' && item === 'find_my_phone') return;
           if (!readings.length || !direct({ plugin: plugin.uuid, category: source.category,

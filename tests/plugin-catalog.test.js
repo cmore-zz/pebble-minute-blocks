@@ -61,3 +61,13 @@ test('configuration preferences are hidden while ordinary readings remain availa
   items(api, { plugin: 'prefs', category: 'preferences', item: 'complications' },
     setTimeout, clearTimeout, reply => assert.equal(reply.error, 'Source unavailable'));
 });
+
+test('watch settings are hidden without excluding ordinary watch data', () => {
+  const api = { enumeratePlugins: () => [{ uuid: 'watch-settings', sources: [{ category: 'watch',
+    items: ['switch_setting', 'number_setting', 'text_setting', 'app_setting', 'battery'],
+    properties: { value: ['shortText'] } }] }],
+    subscribeToSource() { assert.fail('settings must not be queried by the picker'); } };
+  assert.deepEqual(catalog(api).map(source => source.item), ['battery']);
+  items(api, { plugin: 'watch-settings', category: 'watch', item: 'text_setting' },
+    setTimeout, clearTimeout, reply => assert.equal(reply.error, 'Source unavailable'));
+});

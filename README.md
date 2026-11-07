@@ -101,6 +101,16 @@ Each slot can also select an installed plugin source directly, then its Reading
 and (for sources with multiple instances) Item or weather Location. Weather has
 a preferred-provider option as well as explicit providers. Several slots can
 show different readings from the same plugin, such as temperature and humidity.
+When a weather source declares numeric low and high readings, “Today’s range”
+combines both from the same location and update, rounded to whole degrees with a
+single unit (for example `55-72F` or `-12--3C`). Missing endpoints, mismatched or
+unknown units, reversed ranges, and values exceeding seven characters use the
+configured fallback. Provider min/max metadata is not a forecast range.
+Weather readings use compact markers: `RH` humidity, `R` rain chance, `FL` feels
+like, `H` high, `L` low, `UV` UV index, `W` wind speed, `SR` sunrise, and `SS` sunset.
+The settings reading labels explain the markers. Current temperature retains its
+unit without an extra marker; other plugin categories retain their own formatting.
+These are text markers, not downloaded plugin bitmaps.
 Discovery filters declarations to shapes the watch can display. Item names load
 only for selected sources, through the config-page bridge; subscriptions end on
 response, failure, or an eight-second timeout. The phone may request permission.

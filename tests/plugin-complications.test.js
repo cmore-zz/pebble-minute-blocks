@@ -396,7 +396,7 @@ test('direct readings do not require favorites and bind by stable item ID', () =
     { instanceId: 'home', properties: { temperature: shortText('72F'), humidity: shortText('40%') } }
   ] };
   f.subs[0].onData(envelope); f.subs[1].onData(envelope);
-  assert.equal(f.sent.at(-2).PluginText, '72F'); assert.equal(f.sent.at(-1).PluginText, '40%');
+  assert.equal(f.sent.at(-2).PluginText, '72F'); assert.equal(f.sent.at(-1).PluginText, 'RH40%');
   assert.equal(f.sent.at(-1).PluginFavorite, 6);
   f.subs[0].onData({ ...envelope, instances: [envelope.instances[0]] });
   assert.equal(f.sent.at(-1).PluginText, '', 'removed location must not switch to work');

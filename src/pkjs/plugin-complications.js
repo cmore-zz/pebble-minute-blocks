@@ -1,5 +1,6 @@
 // Optional consumer of the phone's preferred complications. Built-in readings
 // stay selected on the watch and are used whenever a plugin reading is absent.
+var weatherFormat = require('./plugin-weather');
 var SLOT_KEYS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
 var MAX_AGE_SEC = 900;
 
@@ -164,7 +165,7 @@ function create(Pebble, send, now, schedule, cancel) {
       publish(slot, '', 0);
       if (!target) return;
       slots[slot].subscription = subscribe({ category: target[0], item: target[1],
-        plugin: chosen ? chosen.plugin : undefined, properties: [target[2]], maxStalenessMs: 60000 }, function(data) {
+        plugin: chosen ? chosen.plugin : undefined, properties: weatherFormat.properties(target[0], target[1], target[2]), maxStalenessMs: 60000 }, function(data) {
         if (chosen && chosen.plugin && data && data.pluginUuid && data.pluginUuid !== chosen.plugin) {
           publish(slot, '', 0); return;
         }
@@ -172,7 +173,7 @@ function create(Pebble, send, now, schedule, cancel) {
         var instance = chosen ? (chosen.instanceId == null ? instances[0] : instances.filter(function(i) {
           return i && i.instanceId === chosen.instanceId;
         })[0]) : instances[target[3]];
-        var text = textFor(instance && instance.properties && instance.properties[target[2]]);
+        var text = weatherFormat.text(target[0], target[1], target[2], instance && instance.properties, textFor);
         var expires = data && data.validUntilMs;
         var observedAt = now();
         var deadline = typeof expires === 'number' && isFinite(expires) ?

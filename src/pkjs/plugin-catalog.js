@@ -1,6 +1,7 @@
 // Discovery reads declarations only. Item names are fetched on demand, after
 // the user chooses a source, so merely opening settings cannot ring a phone or
 // request access to every installed plugin.
+var weatherFormat = require('./plugin-weather');
 var direct = require('./plugin-complications').direct;
 function readable(value) {
   return String(value).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')
@@ -29,11 +30,13 @@ function catalog(Pebble) {
           result.push({ plugin: plugin.uuid, category: source.category, item: item,
             label: String(plugin.name || readable(source.category)) + ' — ' + readable(item),
             readings: readings.map(function(key) {
-              var weatherLabels = { temperature: 'Temperature', feels_like: 'Feels like', high: 'Today’s high',
-                low: 'Today’s low', precipitation: 'Rain chance', uv_index: 'UV index' };
+              var weatherLabels = { temperature: 'Temperature', feels_like: 'Feels like (FL)', high: 'Today’s high (H)',
+                low: 'Today’s low (L)', precipitation: 'Rain chance (R)', uv_index: 'UV index (UV)',
+                humidity: 'Humidity (RH)', wind_speed: 'Wind speed (W)', sunrise: 'Sunrise (SR)', sunset: 'Sunset (SS)' };
               return { value: key, label: source.category === 'weather' && weatherLabels[key] || readable(key) };
             }),
             multiple: !!source.supportsMultiple });
+          weatherFormat.addRange(source.category, item, source.properties, result[result.length - 1].readings);
         });
       });
     });

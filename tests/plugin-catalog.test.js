@@ -50,3 +50,14 @@ test('item replies are bounded and deduplicated, with an explicit truncation sig
     assert.equal(reply.truncated, count > 50); assert.ok(reply.items.every(i => i.label.length === 128));
   }
 });
+
+test('configuration preferences are hidden while ordinary readings remain available', () => {
+  const sources = ['units', 'complications', 'weather_location'].map(item => ({
+    category: 'preferences', items: [item], properties: { name: ['shortText'] }
+  }));
+  const api = { enumeratePlugins: () => [...declaration, { uuid: 'prefs', name: 'Preferences', sources }],
+    subscribeToSource() { assert.fail('metadata must not be queried by the picker'); } };
+  assert.deepEqual(catalog(api), catalog({ enumeratePlugins: () => declaration }));
+  items(api, { plugin: 'prefs', category: 'preferences', item: 'complications' },
+    setTimeout, clearTimeout, reply => assert.equal(reply.error, 'Source unavailable'));
+});

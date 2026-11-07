@@ -20,6 +20,9 @@ function catalog(Pebble) {
       if (!plugin || typeof plugin.uuid !== 'string' || !plugin.uuid || !Array.isArray(plugin.sources)) return;
       plugin.sources.forEach(function(source) {
         if (!source || !Array.isArray(source.items) || !source.properties) return;
+        // Preferences describe configuration, not display readings. Favorites
+        // still consume preferences/complications separately.
+        if (source.category === 'preferences') return;
         var readings = Object.keys(source.properties).filter(function(key) {
           var shapes = source.properties[key];
           return key.length > 0 && key.length <= 128 && Array.isArray(shapes) && shapes.some(function(shape) {

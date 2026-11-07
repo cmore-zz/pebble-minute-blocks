@@ -378,3 +378,54 @@ test('fresh labels display even when cache storage fails', () => {
   assert.match(app.html(), /Favorite 1 — Unavailable/);
   assert.match(app.html(), /Favorite 2 — Not configured/);
 });
+
+test('direct bindings survive restart and legacy saves without entering the watch dictionary', () => {
+  const source = { plugin: null, category: 'weather', item: 'location', property: 'humidity', instanceId: 'home' };
+  const app = phone('emery', JSON.stringify({ PluginSourceTopLeft: source }));
+  assert.deepEqual(JSON.parse(JSON.stringify(app.context.loadSettings().PluginSourceTopLeft)), source);
+  app.events.ready();
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 6);
+  assert.ok(app.messages.every(m => !('PluginSourceTopLeft' in m)));
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(app.context.cloneDefaults())) });
+  assert.deepEqual(JSON.parse(app.storage.get('pebble-minute-blocks-settings')).PluginSourceTopLeft, source);
+});
+test('catalog and saved bindings are safely embedded, including unavailable sources', () => {
+  const saved = { plugin: 'missing', category: 'weather', item: 'location', property: '</script>', instanceId: 'home' };
+  const app = phone('emery', JSON.stringify({ PluginSourceTopLeft: saved }), {
+    subscribeToSource() {}, enumeratePlugins: () => []
+  });
+  app.events.showConfiguration(); const html = app.html();
+  assert.match(html, /value="200" selected>weather \/ location \(unavailable\)/);
+  assert.equal((html.match(/<\/script>/g) || []).length, 1);
+  new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+});
+test('direct controls hide on old companions and hidden chalk slots preserve choices', () => {
+  const source = { plugin: 'weather', category: 'weather', item: 'location', property: 'humidity', instanceId: 'home' };
+  const old = phone('aplite', JSON.stringify({ PluginSourceTopLeft: source }));
+  old.events.showConfiguration(); assert.doesNotMatch(old.html(), /id="sourceControlsTopLeft"/);
+  assert.match(old.html(), /id="PluginSourceTopLeft" type="hidden"/);
+  const round = phone('chalk', JSON.stringify({ PluginSourceBottomRight: source }), { subscribeToSource() {} });
+  round.events.showConfiguration(); assert.doesNotMatch(round.html(), /id="sourceControlsBottomRight"/);
+  assert.match(round.html(), /id="PluginSourceBottomRight" type="hidden"/);
+});
+
+test('saving a direct reading routes live data and switching back to a favorite removes it', () => {
+  const subscriptions = [];
+  const app = phone('emery', undefined, { subscribeToSource(config) {
+    subscriptions.push(config); return { unsubscribe() {} };
+  } });
+  const settings = app.context.cloneDefaults();
+  settings.PluginSourceTopLeft = { plugin: 'stock-provider', category: 'finance', item: 'stock', property: 'price', instanceId: 'AAPL' };
+  settings.PluginFavoriteTopLeft = 3;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
+  assert.equal(subscriptions[0].plugin, 'stock-provider');
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 6);
+  subscriptions[0].onData({ pluginUuid: 'stock-provider', validUntilMs: Date.now() + 60000,
+    instances: [{ instanceId: 'AAPL', properties: { price: { numericValue: { value: 123.4, unit: '$' } } } }] });
+  assert.equal(app.messages.at(-1).PluginText, '123.4$');
+  settings.PluginSourceTopLeft = null;
+  settings.PluginFavoriteTopLeft = 2;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
+  assert.equal(app.context.loadSettings().PluginSourceTopLeft, null);
+  assert.equal(app.messages.filter(m => m.PluginFavoriteTopLeft !== undefined).at(-1).PluginFavoriteTopLeft, 2);
+});

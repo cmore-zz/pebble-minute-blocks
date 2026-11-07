@@ -97,13 +97,30 @@ When unavailable selector for its ordinary fallback; choosing an ordinary source
 hides that fallback control and disables the plugin for that slot;
 choosing None there makes the slot empty while a plugin is unavailable.
 
+Each slot can also select an installed plugin source directly, then its Reading
+and (for sources with multiple instances) Item or weather Location. Weather has
+a preferred-provider option as well as explicit providers. Several slots can
+show different readings from the same plugin, such as temperature and humidity.
+Discovery filters declarations to shapes the watch can display. Item names load
+only for selected sources, through the config-page bridge; subscriptions end on
+response, failure, or an eight-second timeout. The phone may request permission.
+The phone-finder source is excluded because subscribing to it rings the phone.
+
+Explicit items are saved by stable ID, so provider reordering cannot silently
+change locations or accounts; “First available item” deliberately follows the
+first result. Unavailable sources and items stay selected, using the configured
+fallback. Direct bindings are saved on the phone, with only a mode flag and the
+bounded live value sent to the watch. Older companion apps preserve saved direct
+choices and show the built-in settings. The built-in Weather checkbox and units
+apply to built-in weather; plugin weather uses the Pebble app’s provider and units.
+
 The phone reads `preferences/complications`, follows the selected source/property
 and instance index, and sends short text or numeric readings through the same
 layout and collision code as built-ins. Text is limited to seven printable ASCII
 characters; degree signs are removed, dashes normalized, numbers rounded to one
 decimal, and unsupported characters omitted. Oversized readings fall back rather
-than cutting digits off a number. Images, series, timestamps and actions
-are not supported in this first version. On rectangular watches, opposing plugin
+than cutting digits off a number. Timestamps display as HH:MM in the phone’s local time; booleans display ON/OFF.
+Images, series, long-text-only readings and actions are not supported. On rectangular watches, opposing plugin
 readings that overlap another slot fall back one at a time, widest first,
 re-measuring after each fallback to preserve the other reading when it fits.
 Text size stays unchanged. Actual ink bounds determine whether they fit.

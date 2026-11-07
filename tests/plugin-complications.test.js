@@ -382,3 +382,50 @@ test('a delayed renewal clears an already expired reading instead of reviving it
   f.advance(601000); f.timers[0].fn();
   assert.equal(f.sent.at(-1).PluginText, ''); assert.equal(f.sent.at(-1).PluginTTL, 0);
 });
+
+const directChoice = (property = 'temperature', instanceId = 'home') => ({
+  plugin: 'weather-provider', category: 'weather', item: 'location', property, instanceId
+});
+test('direct readings do not require favorites and bind by stable item ID', () => {
+  const f = fixture();
+  f.manager.start({ PluginSourceTopLeft: directChoice(), PluginSourceTopRight: directChoice('humidity') });
+  assert.equal(f.subs.length, 2);
+  assert.equal(f.subs[0].plugin, 'weather-provider');
+  const envelope = { validUntilMs: now + 60000, instances: [
+    { instanceId: 'work', properties: { temperature: shortText('99F') } },
+    { instanceId: 'home', properties: { temperature: shortText('72F'), humidity: shortText('40%') } }
+  ] };
+  f.subs[0].onData(envelope); f.subs[1].onData(envelope);
+  assert.equal(f.sent.at(-2).PluginText, '72F'); assert.equal(f.sent.at(-1).PluginText, '40%');
+  assert.equal(f.sent.at(-1).PluginFavorite, 6);
+  f.subs[0].onData({ ...envelope, instances: [envelope.instances[0]] });
+  assert.equal(f.sent.at(-1).PluginText, '', 'removed location must not switch to work');
+});
+test('changed direct reading cancels old callbacks even though watch mode stays direct', () => {
+  const f = liveFixture();
+  f.manager.start({ PluginSourceTopLeft: directChoice() }); const old = f.subs[0];
+  old.onData(data(shortText('72F')));
+  f.manager.start({ PluginSourceTopLeft: directChoice() }); assert.equal(f.subs.length, 1);
+  f.manager.start({ PluginSourceTopLeft: directChoice('humidity') });
+  assert.equal(old.stopped, true);
+  const count = f.sent.length; old.onData(data(shortText('99F'))); assert.equal(f.sent.length, count);
+  f.subs[1].onError({}); assert.equal(f.sent.at(-1).PluginTTL, 0);
+});
+test('favorite failures do not clear direct readings; first-item and preferred-provider choices work', () => {
+  const f = fixture();
+  f.manager.start({ PluginSourceTopLeft: { ...directChoice(), plugin: null, instanceId: null }, PluginFavoriteTopRight: 2 });
+  assert.equal(f.subs[0].plugin, null); assert.equal(f.subs[1].category, 'preferences');
+  f.subs[0].onData(data(shortText('72F')));
+  const count = f.sent.length; f.subs[1].onError({});
+  assert.equal(f.subs[0].stopped, false);
+  assert.ok(f.sent.slice(count).every(m => m.PluginSlot !== 0));
+});
+test('direct bindings reject invalid identifiers and support compact timestamps and booleans', () => {
+  for (const choice of [null, {}, { ...directChoice(), instanceId: 0 }, { ...directChoice(), property: '' }]) {
+    assert.equal(support.direct(choice), null);
+  }
+  assert.equal(support.textFor({ boolean: { value: false } }), 'OFF');
+  const stamp = new Date(2026, 10, 6, 6, 42).getTime() / 1000;
+  assert.equal(support.textFor({ timestamp: { value: stamp } }), '06:42');
+  assert.equal(support.textFor({ timestamp: { value: 1e300 } }), '');
+});

@@ -1,5 +1,7 @@
 var pluginSupport = require('./plugin-complications');
 var pluginFavorites = require('./plugin-favorites');
+var pluginCatalog = require('./plugin-catalog');
+var installPluginPicker = require('./plugin-picker-ui');
 var sendToWatch = require('./watch-messages')(Pebble, setTimeout);
 var pluginComplications = pluginSupport.create(Pebble, sendToWatch, function() { return Date.now(); }, setTimeout, clearTimeout);
 var PLUGIN_SLOTS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
@@ -135,6 +137,9 @@ function loadSettings() {
           settings[key] = parsed[key];
         }
       });
+      PLUGIN_SLOTS.forEach(function(slot) {
+        settings['PluginSource' + slot] = pluginSupport.direct(parsed['PluginSource' + slot]);
+      });
     } catch (e) {
       console.log("Could not parse saved settings: " + e.message);
     }
@@ -163,7 +168,7 @@ function sendSettings(settings) {
   var builtins = {}, plugins = {};
   Object.keys(DEFAULT_SETTINGS).forEach(function(key) {
     if (key.indexOf('PluginFavorite') === 0) {
-      plugins[key] = pluginSupport.favorite(settings, PLUGIN_SLOTS.indexOf(key.slice(14)));
+      plugins[key] = pluginSupport.selection(settings, PLUGIN_SLOTS.indexOf(key.slice(14)));
     } else {
       builtins[key] = settings[key];
     }
@@ -272,18 +277,26 @@ function selectField(label, id, value, options) {
   ].join("");
 }
 
-function complicationField(label, slot, settings, hidden, favoriteLabels) {
+function complicationField(label, slot, settings, hidden, favoriteLabels, catalog) {
   var builtin = 'complication' + slot, favorite = 'PluginFavorite' + slot;
-  if (hidden) return hiddenField(builtin, settings['Complication' + slot]) +
+  var direct = pluginSupport.direct(settings['PluginSource' + slot]);
+  var sourceField = hiddenField('PluginSource' + slot, encodeURIComponent(JSON.stringify(direct)));
+  catalog = catalog || [];
+  if (hidden) return sourceField + hiddenField(builtin, settings['Complication' + slot]) +
     hiddenField(favorite, settings[favorite] || 0);
-  if (!pluginComplications.available()) return selectField(label + ' — Show', builtin,
+  if (!pluginComplications.available()) return sourceField + selectField(label + ' — Show', builtin,
     settings['Complication' + slot], COMPLICATION_OPTIONS) + hiddenField(favorite, settings[favorite] || 0);
   var options = COMPLICATION_OPTIONS.slice();
   favoriteLabels = favoriteLabels || pluginFavorites.labels(null);
   for (var i = 1; i <= 5; i++) options.push({ value: 100 + i, label: favoriteLabels[i - 1] });
   var selected = settings[favorite] ? 100 + settings[favorite] : settings['Complication' + slot];
-  return '<h3>' + label + '</h3>' + selectField('Show', 'show' + slot, selected, options) +
-    '<div id="fallback' + slot + '"' + (settings[favorite] ? '' : ' style="display:none"') + '>' +
+  catalog.forEach(function(source, index) {
+    options.push({ value: 200 + index, label: source.label });
+    if (direct && direct.plugin === source.plugin && direct.category === source.category && direct.item === source.item) selected = 200 + index;
+  });
+  return '<h3>' + label + '</h3>' + selectField('Show', 'show' + slot, selected, options) + sourceField +
+    '<div id="sourceControls' + slot + '" style="display:none"></div>' +
+    '<div id="fallback' + slot + '"' + (settings[favorite] || direct ? '' : ' style="display:none"') + '>' +
     selectField('When unavailable', builtin, settings['Complication' + slot], COMPLICATION_OPTIONS) +
     '<p>This source appears if the plugin cannot provide a reading. None leaves the slot empty.</p></div>' +
     hiddenField(favorite, settings[favorite] || 0);
@@ -319,6 +332,15 @@ function hiddenColorField(id, value) {
 }
 
 function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteLabels) {
+  var catalog = pluginComplications.available() ? pluginCatalog.catalog(Pebble) : [];
+  PLUGIN_SLOTS.forEach(function(slot) {
+    var saved = pluginSupport.direct(settings['PluginSource' + slot]);
+    if (saved && !catalog.some(function(s) { return s.plugin === saved.plugin && s.category === saved.category && s.item === saved.item; })) {
+      catalog.push({ plugin: saved.plugin, category: saved.category, item: saved.item,
+        label: saved.category + ' / ' + saved.item + ' (unavailable)',
+        readings: [{ value: saved.property, label: saved.property }], multiple: true, unavailable: true });
+    }
+  });
   var presets = isBw ? BW_COLOR_PRESETS : COLOR_PRESETS;
 
   return [
@@ -385,13 +407,13 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    pluginComplications.available() ? '<p>Choose what each slot shows. Selecting a plugin favorite reveals a separate choice for what to show when it is unavailable.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If names cannot be refreshed, previously saved names are shown.</p>' : '',
-    complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels),
-    complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels),
-    complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels),
-    complicationField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels),
-    "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Weather</label>",
-    "<label for=\"weatherUnits\">Weather units</label>",
+    pluginComplications.available() ? '<p>Choose a built-in reading, a favorite, or a plugin source. Plugin sources offer their own readings and items. Long values use the fallback; times use your phone’s local time.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If names cannot be refreshed, previously saved names are shown.</p>' : '',
+    complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels, catalog),
+    complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels, catalog),
+    complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels, catalog),
+    complicationField("Bottom left", "BottomLeft", settings, twoSlotRound, favoriteLabels, catalog),
+    "<label><input id=\"weatherEnabled\" type=\"checkbox\"" + (settings.WeatherEnabled ? " checked" : "") + "> Built-in weather</label>",
+    "<label for=\"weatherUnits\">Built-in weather units</label>",
     "<select id=\"weatherUnits\">",
     "<option value=\"0\"" + (settings.WeatherUnits === 0 ? " selected" : "") + ">Fahrenheit</option>",
     "<option value=\"1\"" + (settings.WeatherUnits === 1 ? " selected" : "") + ">Celsius</option>",
@@ -422,14 +444,15 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
     "setColor('hour',preset.HourColor);",
     "};",
     "});",
+    "var slots=['TopLeft','TopRight','BottomRight','BottomLeft'];",
+    "var picker=(" + installPluginPicker.toString() + ")(" + JSON.stringify(catalog).replace(/</g, '\\u003c') + ",slots);",
     "function syncSlot(slot){",
     "var show=document.getElementById('show'+slot);if(!show){return;}",
-    "var selected=parseInt(show.value,10),plugin=selected>=101&&selected<=105;",
-    "document.getElementById('PluginFavorite'+slot).value=plugin?selected-100:0;",
+    "var selected=parseInt(show.value,10),direct=picker.sync(slot),favorite=selected>=101&&selected<=105,plugin=direct||favorite;",
+    "document.getElementById('PluginFavorite'+slot).value=favorite?selected-100:0;",
     "document.getElementById('fallback'+slot).style.display=plugin?'':'none';",
     "if(!plugin){document.getElementById('complication'+slot).value=selected;}",
     "}",
-    "var slots=['TopLeft','TopRight','BottomRight','BottomLeft'];",
     "slots.forEach(function(slot){var show=document.getElementById('show'+slot);if(show){show.onchange=function(){syncSlot(slot);};syncSlot(slot);}});",
     "document.getElementById('save').onclick=function(){",
     "slots.forEach(syncSlot);",
@@ -456,6 +479,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       return key + ":parseInt(document.getElementById('" + key + "').value,10)";
     }).join(','),
     "};",
+    "slots.forEach(function(slot){var field=document.getElementById('PluginSource'+slot);if(field){settings['PluginSource'+slot]=JSON.parse(decodeURIComponent(field.value));}});",
     "var encoded=encodeURIComponent(JSON.stringify(settings));",
     "var match=(location.search+location.hash).match(/[?#&]return_to=([^&#]+)/);",
     "var target=match?decodeURIComponent(match[1])+encoded:'pebblejs://close#'+encoded;",
@@ -538,6 +562,9 @@ Pebble.addEventListener("webviewclosed", function(e) {
       var key = 'PluginFavorite' + slot;
       if (settings[key] === undefined) settings[key] = previous[key];
       settings[key] = pluginSupport.favorite(settings, index);
+      var sourceKey = 'PluginSource' + slot;
+      settings[sourceKey] = pluginSupport.direct(settings[sourceKey] === undefined ? previous[sourceKey] : settings[sourceKey]);
+      if (settings[sourceKey]) settings[key] = 0;
     });
     saveSettings(settings);
     sendSettings(settings);
@@ -553,4 +580,10 @@ Pebble.addEventListener("appmessage", function(e) {
     getWeather(settings);
     pluginComplications.start(settings);
   }
+});
+
+Pebble.addEventListener('configmessage', function(event) {
+  if (event.data && event.data.type === 'plugin-items') {
+    pluginCatalog.items(Pebble, event.data, setTimeout, clearTimeout, event.respond);
+  } else event.respond({ error: 'Unknown settings request' });
 });

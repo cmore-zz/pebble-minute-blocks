@@ -1671,7 +1671,7 @@ static bool receive_plugin_message(DictionaryIterator *iter) {
     handled = true;
     if ((choice->type != TUPLE_INT && choice->type != TUPLE_UINT) ||
         choice->length != sizeof(int32_t) ||
-        choice->value->int32 < 0 || choice->value->int32 > 5) continue;
+        choice->value->int32 < 0 || choice->value->int32 > PLUGIN_DIRECT_SOURCE) continue;
     int favorite = choice->value->int32;
     if (favorite != s_plugin_favorites[slot]) {
       s_plugin_favorites[slot] = favorite;
@@ -2119,7 +2119,7 @@ static void init(void) {
   settings_load();
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
     int favorite = persist_read_int(PLUGIN_PERSIST_KEYS[slot]);
-    s_plugin_favorites[slot] = favorite >= 1 && favorite <= 5 ? favorite : 0;
+    s_plugin_favorites[slot] = favorite >= 1 && favorite <= PLUGIN_DIRECT_SOURCE ? favorite : 0;
   }
   fonts_load();
   refresh_time();

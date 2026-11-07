@@ -5,6 +5,8 @@
 
 #define PLUGIN_TEXT_LENGTH 7
 #define PLUGIN_MAX_AGE_SEC 900
+// Wire values 1–5 select favorites; 6 selects a phone-side direct source binding.
+#define PLUGIN_DIRECT_SOURCE 6
 
 typedef struct {
   char text[PLUGIN_TEXT_LENGTH + 1];
@@ -14,7 +16,7 @@ typedef struct {
 
 static inline bool plugin_reading_set(PluginReading *reading, int favorite,
                                       const char *text, int ttl, time_t now) {
-  if (favorite < 1 || favorite > 5 || !text || ttl < 0 || ttl > PLUGIN_MAX_AGE_SEC) return false;
+  if (favorite < 1 || favorite > PLUGIN_DIRECT_SOURCE || !text || ttl < 0 || ttl > PLUGIN_MAX_AGE_SEC) return false;
   size_t length = strlen(text);
   if (length > PLUGIN_TEXT_LENGTH) return false;
   for (size_t i = 0; i < length; i++) {

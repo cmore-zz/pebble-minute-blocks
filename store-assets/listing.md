@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 1.3.2
+- Version: 1.5.0
 - Website URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Support email: pebble@cmore.org
@@ -41,6 +41,13 @@ Configurable corner complications show date, weather, battery, Bluetooth, or ste
 On launch the face sweeps into place clockwise and settles with a pulse. Two optional extras, both off by default: a subtle SECONDS sweep, and a KINETIC mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
 
 Pebble Time 2 also offers a LARGE BLOCKS setting for a bolder hour and minute ring. Choose Normal or Large in settings.
+
+## Release Notes — 1.5.0
+
+- Improved plugin support: choose a source and any of its available readings directly for each complication.
+- Show multiple readings from one plugin, such as calendar time and event name, or weather temperature and wind. Temperature ranges appear when the provider supplies high and low values.
+- Clearer source selection and compact weather/calendar formatting, including times that follow your selected clock format.
+- Favorites and built-in fallbacks remain available, including on older companions without plugin support.
 
 ## Release Notes — 1.3.2
 

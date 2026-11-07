@@ -15,6 +15,8 @@ function text(property, values, is24Hour, textFor) {
   }
   if (isTime(property)) {
     if (values.all_day && values.all_day.boolean && values.all_day.boolean.value === true) return 'All day';
+    // Wait for the watch's authoritative clock style instead of flashing 24h.
+    if (typeof is24Hour !== 'boolean') return '';
     var stamp = value.timestamp && value.timestamp.value;
     if (typeof is24Hour === 'boolean' && typeof stamp === 'number' && isFinite(stamp)) {
       var date = new Date(stamp * 1000);

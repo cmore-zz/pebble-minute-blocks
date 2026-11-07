@@ -137,7 +137,14 @@ and instance index, and sends short text or numeric readings through the same
 layout and collision code as built-ins. Text is limited to seven printable ASCII
 characters; degree signs are removed, dashes normalized, numbers rounded to one
 decimal, and unsupported characters omitted. Oversized readings fall back rather
-than cutting digits off a number. Timestamps display as HH:MM in the phone’s local time; booleans display ON/OFF.
+than cutting digits off a number. Negative temperature ranges use a slash, such as
+`-12/-5C`. Sunrise/sunset prefer timestamps and display compact `SR06:42`/`SS18:10`.
+Calendar times follow Time digits (`8:00A` or `08:00`) in the phone’s local timezone;
+all-day events stay `All day`. Long event names keep six characters and a `>` marker.
+When following the watch clock, calendar times wait for its clock-style report;
+system clock-style changes are detected on the next minute tick. Clock reports are
+sent only when needed by plugins, or alongside normal weather requests. Other
+timestamps display HH:MM; booleans display ON/OFF.
 Images, series, long-text-only readings and actions are not supported. On rectangular watches, opposing plugin
 readings that overlap another slot fall back one at a time, widest first,
 re-measuring after each fallback to preserve the other reading when it fits.

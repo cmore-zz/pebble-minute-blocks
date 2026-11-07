@@ -17,7 +17,7 @@ test('all-day events remain all day and missing timestamps retain provider text'
   assert.deepEqual(calendar.properties('ends_at'), ['ends_at', 'all_day']);
   assert.equal(calendar.text('starts_at', { starts_at: stamp(0), all_day: { boolean: { value: true } } }, false, textFor), 'All day');
   assert.equal(calendar.text('starts_at', { starts_at: { shortText: { text: 'Soon' } } }, false, textFor), 'Soon');
-  assert.equal(calendar.text('starts_at', { starts_at: stamp(8) }, undefined, textFor), '08:00');
+  assert.equal(calendar.text('starts_at', { starts_at: stamp(8) }, undefined, textFor), '');
   assert.equal(calendar.text('starts_at', {}, false, textFor), '');
 });
 test('calendar titles keep six characters and a continuation marker, without clipping numbers elsewhere', () => {

@@ -8,7 +8,8 @@ var MAX_AGE_SEC = 900;
 // Phone-only binding. A null instanceId follows the first item; explicit IDs
 // survive reordering and never silently switch to a different location/account.
 function direct(value) {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== 'object' ||
+      (value.category === 'phone' && value.item === 'find_my_phone')) return null;
   function id(v) { return typeof v === 'string' && v.length > 0 && v.length <= 128; }
   if (![value.category, value.item, value.property].every(id) ||
       (value.plugin != null && !id(value.plugin)) ||
@@ -59,6 +60,7 @@ function binding(entry) {
   if (!result.slice(0, 3).every(function(s) {
     return typeof s === 'string' && s.length > 0 && s.length <= 128;
   }) || typeof result[3] !== 'number' || result[3] < 0 || result[3] % 1 !== 0) return null;
+  if (result[0] === 'phone' && result[1] === 'find_my_phone') return null;
   return result;
 }
 

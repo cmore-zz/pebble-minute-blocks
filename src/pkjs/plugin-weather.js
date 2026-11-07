@@ -13,7 +13,7 @@ function range(values) {
   if (!low || !high || typeof low.value !== 'number' || typeof high.value !== 'number' ||
       !isFinite(low.value) || !isFinite(high.value) || low.value > high.value ||
       low.unit !== high.unit || ['°C', '°F', 'C', 'F'].indexOf(low.unit) < 0) return '';
-  var text = Math.round(low.value) + '-' + Math.round(high.value) + low.unit.replace('°', '');
+  var text = Math.round(low.value) + (low.value < 0 || high.value < 0 ? '/' : '-') + Math.round(high.value) + low.unit.replace('°', '');
   return text.length <= 7 ? text : '';
 }
 function windText(property, textFor) {
@@ -35,7 +35,10 @@ function windText(property, textFor) {
 function text(category, item, property, values, textFor) {
   if (weather(category, item) && property === RANGE) return range(values);
   if (weather(category, item) && property === 'wind_speed') return windText(values && values[property], textFor);
-  var value = textFor(values && values[property]);
+  var reading = values && values[property];
+  var solarTime = weather(category, item) && (property === 'sunrise' || property === 'sunset');
+  var compactTime = solarTime && reading && textFor({ timestamp: reading.timestamp });
+  var value = compactTime || textFor(reading);
   var marker = weather(category, item) && MARKERS[property];
   if (!value || !marker) return value;
   // Honor an already-marked provider string; never truncate a number to fit.

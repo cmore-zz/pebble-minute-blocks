@@ -456,3 +456,17 @@ test('calendar subscriptions request all-day status and refresh clock style on w
   f.subs.at(-1).onData(envelope);
   assert.equal(f.sent.at(-1).PluginText, '8:00P');
 });
+
+test('phone-finder actions cannot be restored as direct bindings or selected through favorites', () => {
+  const finder = { plugin: 'phone', category: 'phone', item: 'find_my_phone', property: 'ringing', instanceId: null };
+  assert.equal(support.direct(finder), null);
+  const f = fixture();
+  f.manager.start({ PluginSourceTopLeft: finder });
+  assert.equal(f.subs.length, 0);
+  f.manager.start({ PluginFavoriteTopLeft: 1 });
+  const entry = { properties: { category: shortText('phone'), item: shortText('find_my_phone'),
+    property: shortText('ringing'), index: { numericValue: { value: 0 } } } };
+  assert.equal(support.binding(entry), null);
+  f.subs[0].onData({ instances: [entry] });
+  assert.equal(f.subs.length, 1, 'only preferences subscribed, never the action source');
+});

@@ -7,8 +7,8 @@ const numeric = (value, unit = '°F') => ({ numericValue: { value, unit } });
 const render = values => weather.text('weather', 'location', weather.RANGE, values, textFor);
 test('temperature ranges round both numeric values and include one unit', () => {
   assert.equal(render({ low: numeric(55.2), high: numeric(71.8) }), '55-72F');
-  assert.equal(render({ low: numeric(-12, '°C'), high: numeric(-3, '°C') }), '-12--3C');
-  assert.equal(render({ low: numeric(-3, '°C'), high: numeric(4, '°C') }), '-3-4C');
+  assert.equal(render({ low: numeric(-12, '°C'), high: numeric(-3, '°C') }), '-12/-3C');
+  assert.equal(render({ low: numeric(-3, '°C'), high: numeric(4, '°C') }), '-3/4C');
   assert.equal(render({ low: numeric(0), high: numeric(0) }), '0-0F');
 });
 test('incomplete, incompatible and oversized ranges use the fallback rather than inventing values', () => {
@@ -66,4 +66,17 @@ test('wind fits using the display units, compact spacing and rounded speeds', ()
   assert.equal(wind('12.4 mph'), 'W12mph');
   assert.equal(wind('120 km/h'), '120km/h');
   assert.equal(wind('8 mph'), 'W8mph');
+});
+
+test('solar readings prefer valid timestamps and retain text when timestamps are unusable', () => {
+  for (const [property, marker] of [['sunrise', 'SR'], ['sunset', 'SS']]) {
+    const renderSolar = timestamp => weather.text('weather', 'location', property, {
+      [property]: { timestamp: { value: timestamp }, shortText: { text: '06:42' } }
+    }, textFor);
+    const timestamp = new Date(2026, 10, 6, 6, 42).getTime() / 1000;
+    assert.equal(weather.text('weather', 'location', property, {
+      [property]: { timestamp: { value: timestamp }, shortText: { text: '6:42 AM' } }
+    }, textFor), marker + '06:42');
+    for (const invalid of [undefined, NaN, Infinity, 1e20]) assert.equal(renderSolar(invalid), marker + '06:42');
+  }
 });

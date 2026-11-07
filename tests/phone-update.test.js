@@ -1,4 +1,5 @@
 const test = require('node:test');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -6,7 +7,16 @@ const { execFileSync } = require('node:child_process');
 
 test('watch reports clock changes without waking quiet configurations and retries failed reports', () => {
   const source = fs.readFileSync('src/c/box_minutes.c', 'utf8');
-  const functions = source.slice(source.indexOf('static int s_reported_clock_style'), source.indexOf('// Plugin packets'));
+  const start = source.indexOf('static int s_reported_clock_style');
+  const end = source.indexOf('// Plugin packets', start);
+  assert.ok(start >= 0 && end > start, 'clock-report C test boundaries must exist');
+  const functions = source.slice(start, end);
+  const inboxStart = source.indexOf('static void inbox_received_handler(');
+  const inboxEnd = source.indexOf('  if (background) {', inboxStart);
+  assert.ok(inboxStart >= 0 && inboxEnd > inboxStart, 'inbox early-return boundaries must exist');
+  const inbox = source.slice(inboxStart, inboxEnd) + '(void)context; }';
+  const keys = [...new Set(inbox.match(/MESSAGE_KEY_\w+/g))];
+  const keyDefines = keys.map((key, i) => '#define ' + key + ' ' + (i + 10)).join('\n');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'minute-blocks-phone-'));
   try {
     fs.writeFileSync(path.join(dir, 'test.c'), `
@@ -14,6 +24,10 @@ test('watch reports clock changes without waking quiet configurations and retrie
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
+static time_t test_now = 1000;
+static time_t test_time(time_t *out) { if (out) *out = test_now; return test_now; }
+#define time test_time
 typedef int DictionaryIterator;
 typedef int AppMessageResult;
 #define APP_MSG_OK 0
@@ -32,6 +46,11 @@ static void dict_write_uint8(DictionaryIterator *iter, int key, int value) {
 }
 static int app_message_outbox_send(void) { sends++; return send_result; }
 ${functions}
+${keyDefines}
+typedef int Tuple;
+static Tuple *dict_find(DictionaryIterator *iter, int key) { (void)iter; (void)key; return NULL; }
+static bool receive_plugin_message(DictionaryIterator *iter) { (void)iter; s_plugin_favorites[0] = 6; return true; }
+${inbox}
 int main(void) {
   initial_phone_update(NULL); update_phone(true); assert(sends == 0);
   s_plugin_favorites[0] = 6; update_phone(false);
@@ -53,6 +72,14 @@ int main(void) {
   send_result = 0; update_phone(false); assert(sends == 6);
   phone_update_sent(NULL, NULL);
   s_plugin_favorites[0] = 0; style = 1; update_phone(true); assert(sends == 6);
+  // Pure selection packets must report immediately, before the built-in guard.
+  inbox_received_handler(&dictionary, NULL); assert(sends == 7 && clock_flag == 1);
+  // Simulate the SDK accepting a send but never delivering either callback.
+  s_settings.weather_enabled = true;
+  test_now += 59; update_phone(true); assert(sends == 7);
+  test_now++; update_phone(true); assert(sends == 8 && weather_flag == 1);
+  phone_update_sent(NULL, NULL);
+  update_phone(false); assert(sends == 8);
   return 0;
 }
 `);

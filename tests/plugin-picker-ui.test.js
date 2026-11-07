@@ -123,3 +123,21 @@ test('calendar defaults to event start time rather than an often-empty location'
   f.fields.showTopLeft.value = '201'; f.picker.sync('TopLeft');
   assert.equal(f.binding().property, 'starts_at');
 });
+
+test('malformed bindings during shared lookups leave other slots usable and can be retried', async () => {
+  for (const malformed of ['%broken', 'null', '42', '[]', '{}']) {
+    const f = fixture(null, true); f.ready(); f.picker.sync('TopLeft'); f.picker.sync('TopRight');
+    f.fields.PluginSourceTopLeft.value = malformed;
+    f.requests[0].resolve({ items: [{ value: 'home', label: 'Home' }] }); await Promise.resolve();
+    assert.match(f.container.children[2].textContent, /Selection could not be read/);
+    assert.equal(f.container.children.at(-1).style.display, '');
+    assert.equal(f.fields.sourceControlsTopRight.children[1].children.length, 1);
+    assert.equal(f.fields.sourceControlsTopRight.children[2].textContent, '');
+    f.container.children.at(-1).onclick();
+    assert.equal(f.requests.length, 2);
+    f.requests[1].resolve({ items: [{ value: 'home', label: 'Home' }] }); await Promise.resolve();
+    assert.equal(f.binding().property, 'temperature');
+    assert.equal(f.container.children[1].children.length, 1);
+    assert.equal(f.container.children[2].textContent, '');
+  }
+});

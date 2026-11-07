@@ -4,7 +4,13 @@ function install(catalog, slots) {
   function el(id) { return document.getElementById(id); }
   function sourceKey(s) { return JSON.stringify([s.plugin, s.category, s.item]); }
   function read(slot) {
-    try { return JSON.parse(decodeURIComponent(el('PluginSource' + slot).value)); }
+    try {
+      var value = JSON.parse(decodeURIComponent(el('PluginSource' + slot).value));
+      return value && typeof value === 'object' && !Array.isArray(value) &&
+        typeof value.category === 'string' && typeof value.item === 'string' &&
+        typeof value.property === 'string' &&
+        (value.instanceId == null || typeof value.instanceId === 'string') ? value : null;
+    }
     catch (e) { return null; }
   }
   function write(slot, value) { el('PluginSource' + slot).value = encodeURIComponent(JSON.stringify(value)); }
@@ -25,7 +31,10 @@ function install(catalog, slots) {
     pending[key] = [listener];
     function finish(reply, failed) {
       var listeners = pending[key]; delete pending[key];
-      listeners.forEach(function(l) { if (failed) l.failure(); else l.success(reply); });
+      listeners.forEach(function(l) {
+        try { if (failed) l.failure(); else l.success(reply); }
+        catch (e) { l.failure(); }
+      });
     }
     try {
       Pebble.sendMessage('pkjs', { type: 'plugin-items', plugin: source.plugin,
@@ -48,13 +57,18 @@ function install(catalog, slots) {
       }
       state.itemWrap.textContent = '';
       var current = read(slot), options = [{ value: '', label: 'First available item' }].concat(reply.items);
+      if (!current || sourceKey(current) !== sourceKey(state.source)) {
+        state.note.textContent = 'Selection could not be read. Retry or choose a source again.';
+        if (state.retry) state.retry.style.display = '';
+        return;
+      }
       if (current.instanceId && !reply.items.some(function(i) { return i.value === current.instanceId; })) {
         options.push({ value: current.instanceId, label: current.instanceId + (reply.truncated ? ' (not listed)' : ' (unavailable)') });
       }
       var item = control(state.itemWrap, state.source.category === 'weather' ? 'Location' : 'Item',
         options, current.instanceId || '');
       state.itemWrap.style.display = reply.items.length === 0 && !current.instanceId ? 'none' : '';
-      item.onchange = function() { var value = read(slot); value.instanceId = item.value || null; write(slot, value); };
+      item.onchange = function() { var value = read(slot); if (!value) { states[slot] = null; sync(slot); return; } value.instanceId = item.value || null; write(slot, value); };
       state.note.textContent = reply.truncated ? 'Showing the first 50 items. Any saved item outside this list is retained.' :
         reply.items.length ? '' : 'No items available. The fallback will be used.';
       if (state.retry) state.retry.style.display = reply.items.length ? 'none' : '';
@@ -88,12 +102,18 @@ function install(catalog, slots) {
     }
     var reading = control(container, 'Reading', choices, old.property);
     if (choices.length === 1) reading.parentNode.style.display = 'none';
-    reading.onchange = function() { var value = read(slot); value.property = reading.value; write(slot, value); };
+    reading.onchange = function() { var value = read(slot); if (!value) { states[slot] = null; sync(slot); return; } value.property = reading.value; write(slot, value); };
     var itemWrap = document.createElement('div'), note = document.createElement('p');
     container.appendChild(itemWrap); container.appendChild(note);
     if (source.multiple && !source.unavailable) {
       var retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry loading items'; retry.style.display = 'none';
-      retry.onclick = function() { fetchItems(slot, state); }; container.appendChild(retry);
+      retry.onclick = function() {
+        var current = read(slot);
+        if (!current || sourceKey(current) !== sourceKey(state.source)) {
+          states[slot] = null; sync(slot); return;
+        }
+        fetchItems(slot, state);
+      }; container.appendChild(retry);
     }
     var state = { source: source, itemWrap: itemWrap, note: note, retry: retry }; states[slot] = state;
     if (old.instanceId) note.textContent = 'Selected item: ' + old.instanceId;

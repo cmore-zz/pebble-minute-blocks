@@ -1614,6 +1614,7 @@ static void settings_save(void) {
 // Weather keeps its existing half-hour cadence; a quiet face sends nothing.
 static int s_reported_clock_style = -1;
 static int s_pending_clock_style = -1;
+static time_t s_phone_update_started;
 
 static void phone_update_sent(DictionaryIterator *iter, void *context) {
   (void)iter;
@@ -1631,6 +1632,14 @@ static void phone_update_failed(DictionaryIterator *iter, AppMessageResult reaso
 }
 
 static void update_phone(bool weather_due) {
+  // Do not let a missing SDK callback suppress future clock/weather updates.
+  // The SDK still owns outbox availability if the underlying send is busy.
+  time_t now = time(NULL);
+  if (s_pending_clock_style != -1 &&
+      (now < s_phone_update_started || now - s_phone_update_started >= 60)) {
+    s_pending_clock_style = -1;
+    s_reported_clock_style = -1;
+  }
   bool plugins_enabled = false;
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
     if (s_plugin_favorites[slot]) plugins_enabled = true;
@@ -1647,6 +1656,7 @@ static void update_phone(bool weather_due) {
   dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, weather ? 1 : 0);
   dict_write_uint8(iter, MESSAGE_KEY_Watch24Hour, style);
   s_pending_clock_style = style;
+  s_phone_update_started = now;
   if (app_message_outbox_send() != APP_MSG_OK) s_pending_clock_style = -1;
 }
 
@@ -1742,7 +1752,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
         complication_size || weather_enabled || weather_units || weather_temp || weather_available ||
         weather_high || weather_low || complication_visibility || complication_top_left ||
         complication_top_right || complication_bottom_right || complication_bottom_left ||
-        seconds_visibility || kinetic_enabled || large_blocks)) return;
+        seconds_visibility || kinetic_enabled || large_blocks)) {
+    if (plugin_selection) update_phone(false);
+    return;
+  }
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -2183,6 +2196,7 @@ static void init(void) {
 #endif
   update_backlight_subscription();
   app_message_register_inbox_received(inbox_received_handler);
+  // update_phone is the sole outbox sender; these callbacks track its reports.
   app_message_register_outbox_sent(phone_update_sent);
   app_message_register_outbox_failed(phone_update_failed);
   app_message_open(256, 256);

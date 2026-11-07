@@ -30,7 +30,7 @@ test('markers distinguish weather readings and preserve other plugin formatting'
   }
   assert.equal(weather.text('weather', 'location', 'humidity', { humidity: { shortText: { text: 'RH40%' } } }, textFor), 'RH40%');
   assert.equal(weather.text('weather', 'location', 'humidity', {}, textFor), '');
-  assert.equal(weather.text('weather', 'location', 'wind_speed', { wind_speed: numeric(123.4, 'mph') }, textFor), '');
+  assert.equal(weather.text('weather', 'location', 'wind_speed', { wind_speed: numeric(123.4, 'mph') }, textFor), 'W123mph');
   assert.equal(weather.text('custom', 'location', 'humidity', { humidity: numeric(40, '%') }, textFor), '40%');
 });
 test('range is offered only when a single weather source declares both numeric endpoints', () => {
@@ -55,4 +55,15 @@ test('range subscribes to both endpoints in the selected item and clears when ei
   assert.equal(sent.at(-1).PluginText, '55-72F'); assert.equal(sent.at(-1).PluginTTL, 60);
   requests[0].onData({ validUntilMs: now + 60000, instances: [{ instanceId: 'home', properties: { low: numeric(55) } }] });
   assert.equal(sent.at(-1).PluginText, ''); assert.equal(sent.at(-1).PluginTTL, 0);
+});
+
+test('wind fits using the display units, compact spacing and rounded speeds', () => {
+  const wind = (short, numericUnit = 'mph') => weather.text('weather', 'location', 'wind_speed', {
+    wind_speed: { shortText: { text: short }, numericValue: { value: 8, unit: numericUnit } }
+  }, textFor);
+  assert.equal(wind('12 km/h'), 'W12km/h');
+  assert.equal(wind('12 knots'), 'W12kt');
+  assert.equal(wind('12.4 mph'), 'W12mph');
+  assert.equal(wind('120 km/h'), '120km/h');
+  assert.equal(wind('8 mph'), 'W8mph');
 });

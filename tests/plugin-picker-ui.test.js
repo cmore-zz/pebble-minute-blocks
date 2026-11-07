@@ -115,3 +115,11 @@ test('non-weather sources default to their first reading even if they advertise 
   const f = fixture(); f.catalog[1].readings.push({ value: 'temperature', label: 'Temperature' });
   f.fields.showTopLeft.value = '201'; f.picker.sync('TopLeft'); assert.equal(f.binding().property, 'price');
 });
+
+test('calendar defaults to event start time rather than an often-empty location', () => {
+  const f = fixture();
+  f.catalog[1] = { plugin: 'calendar', category: 'calendar', item: 'event', multiple: true,
+    readings: ['name', 'location', 'starts_at', 'ends_at'].map(value => ({ value, label: value })) };
+  f.fields.showTopLeft.value = '201'; f.picker.sync('TopLeft');
+  assert.equal(f.binding().property, 'starts_at');
+});

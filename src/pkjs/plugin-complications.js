@@ -63,7 +63,13 @@ function binding(entry) {
 
 function create(Pebble, send, now, schedule, cancel) {
   var selections = [], directs = [], slots = [], preferences, session = 0, apiAvailable;
-  var delivered = [], revisions = [], renewals = [];
+  var delivered = [], revisions = [], renewals = [], diagnostics = [];
+  function report(slot, reason) {
+    if (diagnostics[slot] === reason) return;
+    diagnostics[slot] = reason;
+    // No readings, event names, location IDs or provider error messages in logs.
+    console.log('Plugin slot ' + slot + ': ' + reason);
+  }
   var delays = [60000, 300000, 900000];
   function stop(state) {
     if (!state) return;
@@ -86,9 +92,9 @@ function create(Pebble, send, now, schedule, cancel) {
       if (state.sub) state.sub.unsubscribe();
       state.sub = null;
       function current() { return state.active && generation === state.generation; }
-      function failed() {
+      function failed(error) {
         if (!current()) return;
-        onError();
+        onError(error);
         if (!schedule || state.timer != null) return;
         var attempt = ++state.attempts;
         state.timer = schedule(function() {
@@ -180,8 +186,15 @@ function create(Pebble, send, now, schedule, cancel) {
           Math.min(expires, observedAt + MAX_AGE_SEC * 1000) :
           expires == null ? observedAt + 60000 : observedAt;
         var ttl = Math.max(0, Math.floor((deadline - observedAt) / 1000));
+        report(slot, !instance ? 'item unavailable' : !text ? 'reading missing or too long' :
+          ttl <= 0 ? 'reading expired' : 'reading ready');
         publish(slot, text, text ? ttl : 0, text && ttl > 0 ? deadline : undefined);
-      }, function() { publish(slot, '', 0); });
+      }, function(error) {
+        var code = error && error.code;
+        var known = ['PERMISSION_DENIED', 'PLUGIN_UNAVAILABLE', 'TIMEOUT', 'INVALID_REQUEST', 'RATE_LIMITED'];
+        report(slot, known.indexOf(code) >= 0 ? code : 'source error');
+        publish(slot, '', 0);
+      });
     });
   }
   function available() { return typeof Pebble.subscribeToSource === 'function'; }
@@ -199,7 +212,7 @@ function create(Pebble, send, now, schedule, cancel) {
     renewals.forEach(function(_, slot) { cancelRenewal(slot); });
     stop(preferences);
     slots.forEach(function(slot) { stop(slot.subscription); });
-    slots = []; delivered = [];
+    slots = []; delivered = []; diagnostics = [];
     selections = next; directs = nextDirects;
     selections.forEach(function(value, slot) { if (value) publish(slot, '', 0); });
     if (!available() || !selections.some(function(value) { return value > 0; })) return;

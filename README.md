@@ -110,7 +110,13 @@ Weather readings use compact markers: `RH` humidity, `R` rain chance, `FL` feels
 like, `H` high, `L` low, `UV` UV index, `W` wind speed, `SR` sunrise, and `SS` sunset.
 The settings reading labels explain the markers. Current temperature retains its
 unit without an extra marker; other plugin categories retain their own formatting.
-These are text markers, not downloaded plugin bitmaps.
+These are text markers, not downloaded plugin bitmaps. Wind display strings retain
+the provider’s displayed units, remove extra spacing, and round to whole units
+when needed. A speed unit can stand alone if the W marker would exceed the limit.
+Calendar event sources initially select the event start time rather than location,
+which is often absent; saved reading choices are retained.
+Fallback diagnostics log only slot numbers and fixed status/error codes, never
+reading values, event titles, location IDs, or provider error messages.
 Discovery filters declarations to shapes the watch can display. Item names load
 only for selected sources, through the config-page bridge; subscriptions end on
 response, failure, or an eight-second timeout. Concurrent corners share the same

@@ -16,8 +16,25 @@ function range(values) {
   var text = Math.round(low.value) + '-' + Math.round(high.value) + low.unit.replace('°', '');
   return text.length <= 7 ? text : '';
 }
+function windText(property, textFor) {
+  if (!property) return '';
+  var raw = property.shortText && property.shortText.text;
+  // Prefer the provider's display units: its numeric shape can use other units.
+  var match = typeof raw === 'string' && raw.match(/^(-?\d+(?:\.\d+)?)\s*(mph|km\/h|m\/s|knots|kt|kts)$/i);
+  var numeric = property.numericValue;
+  var number = match ? Number(match[1]) : numeric && numeric.value;
+  var unit = match ? match[2].toLowerCase() : numeric && numeric.unit;
+  if (typeof number !== 'number' || !isFinite(number) ||
+      ['mph', 'km/h', 'm/s', 'knots', 'kt', 'kts'].indexOf(unit) < 0) return textFor(property);
+  if (unit === 'knots' || unit === 'kts') unit = 'kt';
+  var value = String(Math.round(number * 10) / 10) + unit;
+  if (value.length + 1 > 7) value = String(Math.round(number)) + unit;
+  // A speed unit identifies the reading even if there is no room for W.
+  return value.length + 1 <= 7 ? 'W' + value : value.length <= 7 ? value : '';
+}
 function text(category, item, property, values, textFor) {
   if (weather(category, item) && property === RANGE) return range(values);
+  if (weather(category, item) && property === 'wind_speed') return windText(values && values[property], textFor);
   var value = textFor(values && values[property]);
   var marker = weather(category, item) && MARKERS[property];
   if (!value || !marker) return value;

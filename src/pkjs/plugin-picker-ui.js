@@ -74,7 +74,10 @@ function install(catalog, slots) {
     container.style.display = '';
     var old = read(slot);
     if (!old || sourceKey(old) !== sourceKey(source)) old = { plugin: source.plugin,
-      category: source.category, item: source.item, property: ((source.category === 'weather' && source.readings.filter(function(r) { return r.value === 'temperature'; })[0]) ||
+      category: source.category, item: source.item, property: (source.readings.filter(function(r) {
+        return source.category === 'weather' && r.value === 'temperature' ||
+          source.category === 'calendar' && source.item === 'event' && r.value === 'starts_at';
+      })[0] ||
         source.readings.filter(function(r) { return r.value !== 'name'; })[0] || source.readings[0]).value, instanceId: null };
     write(slot, old);
     if (states[slot] && states[slot].source === source) return true;

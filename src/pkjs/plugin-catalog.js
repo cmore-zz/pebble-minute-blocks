@@ -3,6 +3,10 @@
 // request access to every installed plugin.
 var weatherFormat = require('./plugin-weather');
 var direct = require('./plugin-complications').direct;
+var weatherLabels = { temperature: 'Temperature', feels_like: 'Feels like (FL)', high: 'Today’s high (H)',
+  low: 'Today’s low (L)', precipitation: 'Rain chance (R)', uv_index: 'UV index (UV)',
+  humidity: 'Humidity (RH)', wind_speed: 'Wind speed (W)', sunrise: 'Sunrise (SR)', sunset: 'Sunset (SS)' };
+var MAX_ITEMS = 50;
 function readable(value) {
   return String(value).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')
     .replace(/\b[a-z]/g, function(c) { return c.toUpperCase(); });
@@ -30,9 +34,6 @@ function catalog(Pebble) {
           result.push({ plugin: plugin.uuid, category: source.category, item: item,
             label: String(plugin.name || readable(source.category)) + ' — ' + readable(item),
             readings: readings.map(function(key) {
-              var weatherLabels = { temperature: 'Temperature', feels_like: 'Feels like (FL)', high: 'Today’s high (H)',
-                low: 'Today’s low (L)', precipitation: 'Rain chance (R)', uv_index: 'UV index (UV)',
-                humidity: 'Humidity (RH)', wind_speed: 'Wind speed (W)', sunrise: 'Sunrise (SR)', sunset: 'Sunset (SS)' };
               return { value: key, label: source.category === 'weather' && weatherLabels[key] || readable(key) };
             }),
             multiple: !!source.supportsMultiple });
@@ -70,13 +71,19 @@ function items(Pebble, request, schedule, cancel, callback) {
     sub = Pebble.subscribeToSource({ plugin: source.plugin, category: source.category, item: source.item,
       properties: ['name'], onData: function(data) {
         if (!data || !Array.isArray(data.instances)) { finish({ error: 'Items unavailable' }); return; }
-        finish({ items: data.instances.filter(function(i) {
-          return i && typeof i.instanceId === 'string' && i.instanceId.length > 0 && i.instanceId.length <= 128;
-        }).map(function(i, index) {
-          var name = i.properties && i.properties.name;
+        var result = [], seen = Object.create(null), truncated = false;
+        for (var index = 0; index < data.instances.length; index++) {
+          var instance = data.instances[index];
+          if (!instance || typeof instance.instanceId !== 'string' || !instance.instanceId.length ||
+              instance.instanceId.length > 128 || seen[instance.instanceId]) continue;
+          if (result.length === MAX_ITEMS) { truncated = true; break; }
+          seen[instance.instanceId] = true;
+          var name = instance.properties && instance.properties.name;
           var text = name && ((name.shortText && name.shortText.text) || (name.longText && name.longText.text));
-          return { value: i.instanceId, label: typeof text === 'string' ? text.slice(0, 128) : 'Item ' + (index + 1) };
-        }) });
+          result.push({ value: instance.instanceId,
+            label: typeof text === 'string' ? text.slice(0, 128) : 'Item ' + (index + 1) });
+        }
+        finish({ items: result, truncated: truncated });
       }, onError: function() { finish({ error: 'Items unavailable. Check plugin permissions in Pebble.' }); }
     });
     if (finished && sub) sub.unsubscribe();

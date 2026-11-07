@@ -113,12 +113,14 @@ unit without an extra marker; other plugin categories retain their own formattin
 These are text markers, not downloaded plugin bitmaps.
 Discovery filters declarations to shapes the watch can display. Item names load
 only for selected sources, through the config-page bridge; subscriptions end on
-response, failure, or an eight-second timeout. The phone may request permission.
+response, failure, or an eight-second timeout. Concurrent corners share the same
+item lookup. Lists show at most 50 distinct items and indicate truncation; saved
+IDs outside that list remain selected. The phone may request permission.
 The phone-finder source is excluded because subscribing to it rings the phone.
 
 Explicit items are saved by stable ID, so provider reordering cannot silently
 change locations or accounts; “First available item” deliberately follows the
-first result. Unavailable sources and items stay selected, using the configured
+first result. Even a sole returned item can be pinned explicitly. Unavailable sources and items stay selected, using the configured
 fallback. Direct bindings are saved on the phone, with only a mode flag and the
 bounded live value sent to the watch. Older companion apps preserve saved direct
 choices and show the built-in settings. The built-in Weather checkbox and units

@@ -151,6 +151,15 @@ test('generated config Save returns the selected block size', () => {
   assert.equal(saved.LargeBlocks, 1);
   assert.equal(saved.HourLeadingZero, 0);
   assert.equal(saved.PluginFavoriteTopRight, 2);
+  // Hidden fields can be restored by the webview independently of visible controls.
+  for (const malformed of ['%broken', encodeURIComponent('{bad json')]) {
+    fields.PluginSourceTopLeft = { value: malformed };
+    fields.save.onclick();
+    const recovered = JSON.parse(decodeURIComponent(result.split('#')[1]));
+    assert.equal(recovered.PluginSourceTopLeft, null);
+    assert.equal(recovered.LargeBlocks, 1);
+    assert.equal(recovered.PluginFavoriteTopRight, 2);
+  }
 });
 
 

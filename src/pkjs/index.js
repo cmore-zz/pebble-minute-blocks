@@ -333,7 +333,7 @@ function hiddenColorField(id, value) {
 
 function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteLabels) {
   var catalog = pluginComplications.available() ? pluginCatalog.catalog(Pebble) : [];
-  PLUGIN_SLOTS.forEach(function(slot) {
+  if (pluginComplications.available()) PLUGIN_SLOTS.forEach(function(slot) {
     var saved = pluginSupport.direct(settings['PluginSource' + slot]);
     if (saved && !catalog.some(function(s) { return s.plugin === saved.plugin && s.category === saved.category && s.item === saved.item; })) {
       catalog.push({ plugin: saved.plugin, category: saved.category, item: saved.item,
@@ -479,7 +479,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       return key + ":parseInt(document.getElementById('" + key + "').value,10)";
     }).join(','),
     "};",
-    "slots.forEach(function(slot){var field=document.getElementById('PluginSource'+slot);if(field){settings['PluginSource'+slot]=JSON.parse(decodeURIComponent(field.value));}});",
+    "slots.forEach(function(slot){var field=document.getElementById('PluginSource'+slot);if(field){try{settings['PluginSource'+slot]=JSON.parse(decodeURIComponent(field.value));}catch(e){settings['PluginSource'+slot]=null;}}});",
     "var encoded=encodeURIComponent(JSON.stringify(settings));",
     "var match=(location.search+location.hash).match(/[?#&]return_to=([^&#]+)/);",
     "var target=match?decodeURIComponent(match[1])+encoded:'pebblejs://close#'+encoded;",

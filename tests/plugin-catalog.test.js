@@ -36,3 +36,17 @@ test('item lookup timeout cancels subscriptions and ignores late data', () => {
   timeout(); request.onData({ instances: [] });
   assert.equal(replies.length, 1); assert.ok(replies[0].error); assert.equal(stopped, 1);
 });
+
+test('item replies are bounded and deduplicated, with an explicit truncation signal', () => {
+  for (const count of [50, 51, 1000]) {
+    let reply;
+    const instances = Array.from({ length: count }, (_, i) => ({ instanceId: 'item-' + i,
+      properties: { name: { shortText: { text: 'x'.repeat(200) } } } }));
+    items({ enumeratePlugins: () => declaration, subscribeToSource(config) {
+      config.onData({ instances: [instances[0], instances[0], { instanceId: '' }, ...instances] });
+      return { unsubscribe() {} };
+    } }, { plugin: 'weather', category: 'weather', item: 'location' }, () => 1, () => {}, r => reply = r);
+    assert.equal(reply.items.length, 50); assert.equal(new Set(reply.items.map(i => i.value)).size, 50);
+    assert.equal(reply.truncated, count > 50); assert.ok(reply.items.every(i => i.label.length === 128));
+  }
+});

@@ -1,6 +1,6 @@
 // Embedded in the settings page; keep this function self-contained.
 function install(catalog, slots) {
-  var states = {}, ready = false;
+  var states = {}, pending = {}, ready = false;
   function el(id) { return document.getElementById(id); }
   function sourceKey(s) { return JSON.stringify([s.plugin, s.category, s.item]); }
   function read(slot) {
@@ -18,13 +18,28 @@ function install(catalog, slots) {
     select.value = value;
     wrap.appendChild(select); parent.appendChild(wrap); return select;
   }
+  // Concurrent corners share a lookup, but retries after it settles fetch anew.
+  function loadItems(source, success, failure) {
+    var key = sourceKey(source), listener = { success: success, failure: failure };
+    if (pending[key]) { pending[key].push(listener); return; }
+    pending[key] = [listener];
+    function finish(reply, failed) {
+      var listeners = pending[key]; delete pending[key];
+      listeners.forEach(function(l) { if (failed) l.failure(); else l.success(reply); });
+    }
+    try {
+      Pebble.sendMessage('pkjs', { type: 'plugin-items', plugin: source.plugin,
+        category: source.category, item: source.item }).then(function(reply) {
+        finish(reply, false);
+      }, function() { finish(null, true); });
+    } catch (e) { finish(null, true); }
+  }
   function fetchItems(slot, state) {
     if (!ready || state.loading || !state.source.multiple || state.source.unavailable) return;
     state.loading = true;
     if (state.retry) state.retry.style.display = 'none';
     state.note.textContent = 'Loading items…';
-    Pebble.sendMessage('pkjs', { type: 'plugin-items', plugin: state.source.plugin,
-      category: state.source.category, item: state.source.item }).then(function(reply) {
+    loadItems(state.source, function(reply) {
       if (states[slot] !== state) return;
       state.loading = false;
       if (!reply || !Array.isArray(reply.items)) {
@@ -34,13 +49,14 @@ function install(catalog, slots) {
       state.itemWrap.textContent = '';
       var current = read(slot), options = [{ value: '', label: 'First available item' }].concat(reply.items);
       if (current.instanceId && !reply.items.some(function(i) { return i.value === current.instanceId; })) {
-        options.push({ value: current.instanceId, label: current.instanceId + ' (unavailable)' });
+        options.push({ value: current.instanceId, label: current.instanceId + (reply.truncated ? ' (not listed)' : ' (unavailable)') });
       }
       var item = control(state.itemWrap, state.source.category === 'weather' ? 'Location' : 'Item',
         options, current.instanceId || '');
-      state.itemWrap.style.display = reply.items.length <= 1 && !current.instanceId ? 'none' : '';
+      state.itemWrap.style.display = reply.items.length === 0 && !current.instanceId ? 'none' : '';
       item.onchange = function() { var value = read(slot); value.instanceId = item.value || null; write(slot, value); };
-      state.note.textContent = reply.items.length ? '' : 'No items available. The fallback will be used.';
+      state.note.textContent = reply.truncated ? 'Showing the first 50 items. Any saved item outside this list is retained.' :
+        reply.items.length ? '' : 'No items available. The fallback will be used.';
       if (state.retry) state.retry.style.display = reply.items.length ? 'none' : '';
     }, function() {
       if (states[slot] !== state) return;
@@ -58,7 +74,7 @@ function install(catalog, slots) {
     container.style.display = '';
     var old = read(slot);
     if (!old || sourceKey(old) !== sourceKey(source)) old = { plugin: source.plugin,
-      category: source.category, item: source.item, property: (source.readings.filter(function(r) { return r.value === 'temperature'; })[0] ||
+      category: source.category, item: source.item, property: ((source.category === 'weather' && source.readings.filter(function(r) { return r.value === 'temperature'; })[0]) ||
         source.readings.filter(function(r) { return r.value !== 'name'; })[0] || source.readings[0]).value, instanceId: null };
     write(slot, old);
     if (states[slot] && states[slot].source === source) return true;

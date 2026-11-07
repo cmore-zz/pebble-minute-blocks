@@ -1,6 +1,7 @@
 // Optional consumer of the phone's preferred complications. Built-in readings
 // stay selected on the watch and are used whenever a plugin reading is absent.
 var weatherFormat = require('./plugin-weather');
+var calendarFormat = require('./plugin-calendar');
 var SLOT_KEYS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
 var MAX_AGE_SEC = 900;
 
@@ -63,6 +64,7 @@ function binding(entry) {
 
 function create(Pebble, send, now, schedule, cancel) {
   var selections = [], directs = [], slots = [], preferences, session = 0, apiAvailable;
+  var clockStyle, watch24Hour, lastSettings;
   var delivered = [], revisions = [], renewals = [], diagnostics = [];
   function report(slot, reason) {
     if (diagnostics[slot] === reason) return;
@@ -171,7 +173,8 @@ function create(Pebble, send, now, schedule, cancel) {
       publish(slot, '', 0);
       if (!target) return;
       slots[slot].subscription = subscribe({ category: target[0], item: target[1],
-        plugin: chosen ? chosen.plugin : undefined, properties: weatherFormat.properties(target[0], target[1], target[2]), maxStalenessMs: 60000 }, function(data) {
+        plugin: chosen ? chosen.plugin : undefined, properties: calendarFormat.matches(target[0], target[1]) ? calendarFormat.properties(target[2]) :
+          weatherFormat.properties(target[0], target[1], target[2]), maxStalenessMs: 60000 }, function(data) {
         if (chosen && chosen.plugin && data && data.pluginUuid && data.pluginUuid !== chosen.plugin) {
           publish(slot, '', 0); return;
         }
@@ -179,7 +182,9 @@ function create(Pebble, send, now, schedule, cancel) {
         var instance = chosen ? (chosen.instanceId == null ? instances[0] : instances.filter(function(i) {
           return i && i.instanceId === chosen.instanceId;
         })[0]) : instances[target[3]];
-        var text = weatherFormat.text(target[0], target[1], target[2], instance && instance.properties, textFor);
+        var text = calendarFormat.matches(target[0], target[1]) ?
+          calendarFormat.text(target[2], instance && instance.properties, clockStyle, textFor) :
+          weatherFormat.text(target[0], target[1], target[2], instance && instance.properties, textFor);
         var expires = data && data.validUntilMs;
         var observedAt = now();
         var deadline = typeof expires === 'number' && isFinite(expires) ?
@@ -199,14 +204,17 @@ function create(Pebble, send, now, schedule, cancel) {
   }
   function available() { return typeof Pebble.subscribeToSource === 'function'; }
   function start(settings) {
+    lastSettings = settings;
+    var nextClockStyle = settings.TimeMode === 1 ? false : settings.TimeMode === 2 ? true : watch24Hour;
     var next = SLOT_KEYS.map(function(_, slot) { return selection(settings, slot); });
     var nextDirects = SLOT_KEYS.map(function(slot) { return direct(settings['PluginSource' + slot]); });
     var supported = available();
     // Weather refreshes and unrelated settings saves must not blank live slots.
     // Failed sources have their own timers, including after the fast retry budget.
-    if (apiAvailable === supported && next.every(function(value, slot) {
+    if (clockStyle === nextClockStyle && apiAvailable === supported && next.every(function(value, slot) {
       return value === selections[slot] && JSON.stringify(nextDirects[slot]) === JSON.stringify(directs[slot]);
     })) return;
+    clockStyle = nextClockStyle;
     apiAvailable = supported;
     session++;
     renewals.forEach(function(_, slot) { cancelRenewal(slot); });
@@ -222,7 +230,11 @@ function create(Pebble, send, now, schedule, cancel) {
       function(envelope) { update(envelope && Array.isArray(envelope.instances) ? envelope.instances : []); },
       function() { update([]); });
   }
-  return { available: available, start: start };
+  return { available: available, start: start, setWatch24Hour: function(value) {
+    if (value !== 0 && value !== 1) return;
+    watch24Hour = value === 1;
+    if (lastSettings) start(lastSettings);
+  } };
 }
 
 module.exports = { create: create, textFor: textFor, favorite: favorite, binding: binding, direct: direct, selection: selection };

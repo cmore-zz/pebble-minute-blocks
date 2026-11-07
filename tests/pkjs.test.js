@@ -438,3 +438,16 @@ test('saving a direct reading routes live data and switching back to a favorite 
   assert.equal(app.context.loadSettings().PluginSourceTopLeft, null);
   assert.equal(app.messages.filter(m => m.PluginFavoriteTopLeft !== undefined).at(-1).PluginFavoriteTopLeft, 2);
 });
+
+test('watch clock reports reach calendar formatting even with weather disabled', () => {
+  const subs = [];
+  const app = phone('emery', JSON.stringify({ WeatherEnabled: 0, TimeMode: 0,
+    PluginSourceTopLeft: { plugin: null, category: 'calendar', item: 'event', property: 'starts_at', instanceId: null }
+  }), { subscribeToSource(config) { subs.push(config); return { unsubscribe() {} }; } });
+  app.events.appmessage({ payload: { Watch24Hour: 0, WeatherRequest: 0 } });
+  subs.at(-1).onData({ instances: [{ properties: { starts_at: {
+    timestamp: { value: new Date(2026, 10, 6, 8, 0).getTime() / 1000 }, shortText: { text: '08:00' }
+  } } }] });
+  assert.equal(app.messages.at(-1).PluginText, '8:00A');
+  assert.equal(app.requests.length, 0);
+});

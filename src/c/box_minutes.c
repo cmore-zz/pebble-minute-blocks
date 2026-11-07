@@ -1611,17 +1611,14 @@ static void settings_save(void) {
 }
 
 static void request_weather(void) {
-  if (!s_settings.weather_enabled) {
-    return;
-  }
-
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (result != APP_MSG_OK || !iter) {
     return;
   }
 
-  dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, 1);
+  dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, s_settings.weather_enabled ? 1 : 0);
+  dict_write_uint8(iter, MESSAGE_KEY_Watch24Hour, clock_is_24h_style() ? 1 : 0);
   app_message_outbox_send();
 }
 

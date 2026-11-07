@@ -407,7 +407,7 @@ function buildConfigHtml(settings, isRound, isBw, twoSlotRound, isPt2, favoriteL
       { value: 2, label: "Shake to show" }
     ]),
     "<label><input id=\"kineticEnabled\" type=\"checkbox\"" + (settings.KineticEnabled ? " checked" : "") + "> Kinetic animations</label>",
-    pluginComplications.available() ? '<p>Choose a built-in reading, a favorite, or a plugin source. Plugin sources offer their own readings and items. Long values use the fallback; times use your phone’s local time.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If names cannot be refreshed, previously saved names are shown.</p>' : '',
+    pluginComplications.available() ? '<p>Choose a built-in reading, a favorite, or a plugin source. Plugin sources offer their own readings and items. Long event names are shortened with a &gt; marker; other oversized values use the fallback. Calendar times follow Time digits and use your phone’s local time.</p><p>Configure favorites in the Pebble app: Settings → Plugins → Complications. Labels show each configured source, instance number, and reading. If names cannot be refreshed, previously saved names are shown.</p>' : '',
     complicationField(twoSlotRound ? "Detail 1" : "Top left", "TopLeft", settings, false, favoriteLabels, catalog),
     complicationField(twoSlotRound ? "Detail 2" : "Top right", "TopRight", settings, false, favoriteLabels, catalog),
     complicationField("Bottom right", "BottomRight", settings, twoSlotRound, favoriteLabels, catalog),
@@ -575,9 +575,10 @@ Pebble.addEventListener("webviewclosed", function(e) {
 });
 
 Pebble.addEventListener("appmessage", function(e) {
-  if (e.payload && e.payload.WeatherRequest) {
+  if (e.payload) {
+    pluginComplications.setWatch24Hour(e.payload.Watch24Hour);
     var settings = loadSettings();
-    getWeather(settings);
+    if (e.payload.WeatherRequest) getWeather(settings);
     pluginComplications.start(settings);
   }
 });

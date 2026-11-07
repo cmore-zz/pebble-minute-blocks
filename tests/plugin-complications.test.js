@@ -429,3 +429,30 @@ test('direct bindings reject invalid identifiers and support compact timestamps 
   assert.equal(support.textFor({ timestamp: { value: stamp } }), '06:42');
   assert.equal(support.textFor({ timestamp: { value: 1e300 } }), '');
 });
+
+test('calendar subscriptions request all-day status and refresh clock style on watch reports and settings changes', () => {
+  const f = fixture();
+  const settings = { TimeMode: 0, PluginSourceTopLeft: {
+    plugin: null, category: 'calendar', item: 'event', property: 'starts_at', instanceId: null
+  } };
+  const envelope = { instances: [{ properties: {
+    starts_at: { timestamp: { value: new Date(2026, 10, 6, 20, 0).getTime() / 1000 }, shortText: { text: '20:00' } },
+    all_day: { boolean: { value: false } }
+  } }] };
+  f.manager.start(settings);
+  assert.deepEqual(f.subs.at(-1).properties, ['starts_at', 'all_day']);
+  f.manager.setWatch24Hour(0);
+  assert.equal(f.subs[0].stopped, true);
+  f.subs.at(-1).onData(envelope);
+  assert.equal(f.sent.at(-1).PluginText, '8:00P');
+  const count = f.subs.length;
+  f.manager.setWatch24Hour(0);
+  f.manager.setWatch24Hour(undefined);
+  assert.equal(f.subs.length, count);
+  f.manager.start({ ...settings, TimeMode: 2 });
+  f.subs.at(-1).onData(envelope);
+  assert.equal(f.sent.at(-1).PluginText, '20:00');
+  f.manager.start({ ...settings, TimeMode: 1 });
+  f.subs.at(-1).onData(envelope);
+  assert.equal(f.sent.at(-1).PluginText, '8:00P');
+});

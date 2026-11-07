@@ -97,13 +97,55 @@ When unavailable selector for its ordinary fallback; choosing an ordinary source
 hides that fallback control and disables the plugin for that slot;
 choosing None there makes the slot empty while a plugin is unavailable.
 
+Each slot can also select an installed plugin source directly, then its Reading
+and (for sources with multiple instances) Item or weather Location. Weather has
+a preferred-provider option as well as explicit providers. Several slots can
+show different readings from the same plugin, such as temperature and humidity.
+When a weather source declares numeric low and high readings, “Today’s range”
+combines both from the same location and update, rounded to whole degrees with a
+single unit (for example `55-72F` or `-12--3C`). Missing endpoints, mismatched or
+unknown units, reversed ranges, and values exceeding seven characters use the
+configured fallback. Provider min/max metadata is not a forecast range.
+Weather readings use compact markers: `RH` humidity, `R` rain chance, `FL` feels
+like, `H` high, `L` low, `UV` UV index, `W` wind speed, `SR` sunrise, and `SS` sunset.
+The settings reading labels explain the markers. Current temperature retains its
+unit without an extra marker; other plugin categories retain their own formatting.
+These are text markers, not downloaded plugin bitmaps. Wind display strings retain
+the provider’s displayed units, remove extra spacing, and round to whole units
+when needed. A speed unit can stand alone if the W marker would exceed the limit.
+Calendar event sources initially select the event start time rather than location,
+which is often absent; saved reading choices are retained.
+Fallback diagnostics log only slot numbers and fixed status/error codes, never
+reading values, event titles, location IDs, or provider error messages.
+Discovery filters declarations to shapes the watch can display. Item names load
+only for selected sources, through the config-page bridge; subscriptions end on
+response, failure, or an eight-second timeout. Concurrent corners share the same
+item lookup. Lists show at most 50 distinct items and indicate truncation; saved
+IDs outside that list remain selected. The phone may request permission.
+The phone-finder source is excluded because subscribing to it rings the phone.
+
+Explicit items are saved by stable ID, so provider reordering cannot silently
+change locations or accounts; “First available item” deliberately follows the
+first result. Even a sole returned item can be pinned explicitly. Unavailable sources and items stay selected, using the configured
+fallback. Direct bindings are saved on the phone, with only a mode flag and the
+bounded live value sent to the watch. Older companion apps preserve saved direct
+choices and show the built-in settings. The built-in Weather checkbox and units
+apply to built-in weather; plugin weather uses the Pebble app’s provider and units.
+
 The phone reads `preferences/complications`, follows the selected source/property
 and instance index, and sends short text or numeric readings through the same
 layout and collision code as built-ins. Text is limited to seven printable ASCII
 characters; degree signs are removed, dashes normalized, numbers rounded to one
 decimal, and unsupported characters omitted. Oversized readings fall back rather
-than cutting digits off a number. Images, series, timestamps and actions
-are not supported in this first version. On rectangular watches, opposing plugin
+than cutting digits off a number. Negative temperature ranges use a slash, such as
+`-12/-5C`. Sunrise/sunset prefer timestamps and display compact `SR06:42`/`SS18:10`.
+Calendar times follow Time digits (`8:00A` or `08:00`) in the phone’s local timezone;
+all-day events stay `All day`. Long event names keep six characters and a `>` marker.
+When following the watch clock, calendar times wait for its clock-style report;
+system clock-style changes are detected on the next minute tick. Clock reports are
+sent only when needed by plugins, or alongside normal weather requests. Other
+timestamps display HH:MM; booleans display ON/OFF.
+Images, series, long-text-only readings and actions are not supported. On rectangular watches, opposing plugin
 readings that overlap another slot fall back one at a time, widest first,
 re-measuring after each fallback to preserve the other reading when it fits.
 Text size stays unchanged. Actual ink bounds determine whether they fit.

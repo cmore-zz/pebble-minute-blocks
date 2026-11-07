@@ -1,12 +1,37 @@
 // Optional consumer of the phone's preferred complications. Built-in readings
 // stay selected on the watch and are used whenever a plugin reading is absent.
+var weatherFormat = require('./plugin-weather');
+var calendarFormat = require('./plugin-calendar');
 var SLOT_KEYS = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
 var MAX_AGE_SEC = 900;
+
+// Phone-only binding. A null instanceId follows the first item; explicit IDs
+// survive reordering and never silently switch to a different location/account.
+function direct(value) {
+  if (!value || typeof value !== 'object' ||
+      (value.category === 'phone' && value.item === 'find_my_phone')) return null;
+  function id(v) { return typeof v === 'string' && v.length > 0 && v.length <= 128; }
+  if (![value.category, value.item, value.property].every(id) ||
+      (value.plugin != null && !id(value.plugin)) ||
+      (value.instanceId != null && !id(value.instanceId))) return null;
+  return { plugin: value.plugin || null, category: value.category, item: value.item,
+    property: value.property, instanceId: value.instanceId == null ? null : value.instanceId };
+}
+function selection(settings, slot) {
+  return direct(settings['PluginSource' + SLOT_KEYS[slot]]) ? 6 : favorite(settings, slot);
+}
 
 function textFor(property) {
   if (!property || typeof property !== 'object') return '';
   var text = property.shortText && property.shortText.text;
   if (typeof text !== 'string') {
+    var stamp = property.timestamp && property.timestamp.value;
+    if (typeof stamp === 'number' && isFinite(stamp)) {
+      var date = new Date(stamp * 1000);
+      if (!isFinite(date.getTime())) return '';
+      return ('0' + date.getHours()).slice(-2) + ':' + ('0' + date.getMinutes()).slice(-2);
+    }
+    if (property.boolean && typeof property.boolean.value === 'boolean') return property.boolean.value ? 'ON' : 'OFF';
     var number = property.numericValue;
     if (!number || typeof number.value !== 'number' || !isFinite(number.value)) return '';
     var rounded = Math.round(number.value * 10) / 10;
@@ -35,12 +60,20 @@ function binding(entry) {
   if (!result.slice(0, 3).every(function(s) {
     return typeof s === 'string' && s.length > 0 && s.length <= 128;
   }) || typeof result[3] !== 'number' || result[3] < 0 || result[3] % 1 !== 0) return null;
+  if (result[0] === 'phone' && result[1] === 'find_my_phone') return null;
   return result;
 }
 
 function create(Pebble, send, now, schedule, cancel) {
-  var selections = [], slots = [], preferences, session = 0, apiAvailable;
-  var delivered = [], revisions = [], renewals = [];
+  var selections = [], directs = [], slots = [], preferences, session = 0, apiAvailable;
+  var clockStyle, watch24Hour, lastSettings;
+  var delivered = [], revisions = [], renewals = [], diagnostics = [];
+  function report(slot, reason) {
+    if (diagnostics[slot] === reason) return;
+    diagnostics[slot] = reason;
+    // No readings, event names, location IDs or provider error messages in logs.
+    console.log('Plugin slot ' + slot + ': ' + reason);
+  }
   var delays = [60000, 300000, 900000];
   function stop(state) {
     if (!state) return;
@@ -63,9 +96,9 @@ function create(Pebble, send, now, schedule, cancel) {
       if (state.sub) state.sub.unsubscribe();
       state.sub = null;
       function current() { return state.active && generation === state.generation; }
-      function failed() {
+      function failed(error) {
         if (!current()) return;
-        onError();
+        onError(error);
         if (!schedule || state.timer != null) return;
         var attempt = ++state.attempts;
         state.timer = schedule(function() {
@@ -131,7 +164,9 @@ function create(Pebble, send, now, schedule, cancel) {
   }
   function update(entries) {
     selections.forEach(function(selected, slot) {
-      var target = selected ? binding(entries[selected - 1]) : null;
+      var chosen = directs[slot];
+      var target = chosen ? [chosen.category, chosen.item, chosen.property, chosen.instanceId, chosen.plugin] :
+        selected ? binding(entries[selected - 1]) : null;
       var signature = JSON.stringify(target);
       if (slots[slot] && slots[slot].signature === signature) return;
       if (slots[slot]) stop(slots[slot].subscription);
@@ -140,42 +175,68 @@ function create(Pebble, send, now, schedule, cancel) {
       publish(slot, '', 0);
       if (!target) return;
       slots[slot].subscription = subscribe({ category: target[0], item: target[1],
-        properties: [target[2]], maxStalenessMs: 60000 }, function(data) {
-        var instance = data && Array.isArray(data.instances) && data.instances[target[3]];
-        var text = textFor(instance && instance.properties && instance.properties[target[2]]);
+        plugin: chosen ? chosen.plugin : undefined, properties: calendarFormat.matches(target[0], target[1]) ? calendarFormat.properties(target[2]) :
+          weatherFormat.properties(target[0], target[1], target[2]), maxStalenessMs: 60000 }, function(data) {
+        if (chosen && chosen.plugin && data && data.pluginUuid && data.pluginUuid !== chosen.plugin) {
+          publish(slot, '', 0); return;
+        }
+        var instances = data && Array.isArray(data.instances) ? data.instances : [];
+        var instance = chosen ? (chosen.instanceId == null ? instances[0] : instances.filter(function(i) {
+          return i && i.instanceId === chosen.instanceId;
+        })[0]) : instances[target[3]];
+        var text = calendarFormat.matches(target[0], target[1]) ?
+          calendarFormat.text(target[2], instance && instance.properties, clockStyle, textFor) :
+          weatherFormat.text(target[0], target[1], target[2], instance && instance.properties, textFor);
         var expires = data && data.validUntilMs;
         var observedAt = now();
         var deadline = typeof expires === 'number' && isFinite(expires) ?
           Math.min(expires, observedAt + MAX_AGE_SEC * 1000) :
           expires == null ? observedAt + 60000 : observedAt;
         var ttl = Math.max(0, Math.floor((deadline - observedAt) / 1000));
+        report(slot, !instance ? 'item unavailable' : !text ? 'reading missing or too long' :
+          ttl <= 0 ? 'reading expired' : 'reading ready');
         publish(slot, text, text ? ttl : 0, text && ttl > 0 ? deadline : undefined);
-      }, function() { publish(slot, '', 0); });
+      }, function(error) {
+        var code = error && error.code;
+        var known = ['PERMISSION_DENIED', 'PLUGIN_UNAVAILABLE', 'TIMEOUT', 'INVALID_REQUEST', 'RATE_LIMITED'];
+        report(slot, known.indexOf(code) >= 0 ? code : 'source error');
+        publish(slot, '', 0);
+      });
     });
   }
   function available() { return typeof Pebble.subscribeToSource === 'function'; }
   function start(settings) {
-    var next = SLOT_KEYS.map(function(_, slot) { return favorite(settings, slot); });
+    lastSettings = settings;
+    var nextClockStyle = settings.TimeMode === 1 ? false : settings.TimeMode === 2 ? true : watch24Hour;
+    var next = SLOT_KEYS.map(function(_, slot) { return selection(settings, slot); });
+    var nextDirects = SLOT_KEYS.map(function(slot) { return direct(settings['PluginSource' + slot]); });
     var supported = available();
     // Weather refreshes and unrelated settings saves must not blank live slots.
     // Failed sources have their own timers, including after the fast retry budget.
-    if (apiAvailable === supported && next.every(function(value, slot) {
-      return value === selections[slot];
+    if (clockStyle === nextClockStyle && apiAvailable === supported && next.every(function(value, slot) {
+      return value === selections[slot] && JSON.stringify(nextDirects[slot]) === JSON.stringify(directs[slot]);
     })) return;
+    clockStyle = nextClockStyle;
     apiAvailable = supported;
     session++;
     renewals.forEach(function(_, slot) { cancelRenewal(slot); });
     stop(preferences);
     slots.forEach(function(slot) { stop(slot.subscription); });
-    slots = []; delivered = [];
-    selections = next;
+    slots = []; delivered = []; diagnostics = [];
+    selections = next; directs = nextDirects;
     selections.forEach(function(value, slot) { if (value) publish(slot, '', 0); });
     if (!available() || !selections.some(function(value) { return value > 0; })) return;
+    if (directs.some(function(value) { return !!value; })) update([]);
+    if (!selections.some(function(value) { return value >= 1 && value <= 5; })) return;
     preferences = subscribe({ category: 'preferences', item: 'complications', maxStalenessMs: 60000 },
       function(envelope) { update(envelope && Array.isArray(envelope.instances) ? envelope.instances : []); },
       function() { update([]); });
   }
-  return { available: available, start: start };
+  return { available: available, start: start, setWatch24Hour: function(value) {
+    if (value !== 0 && value !== 1) return;
+    watch24Hour = value === 1;
+    if (lastSettings) start(lastSettings);
+  } };
 }
 
-module.exports = { create: create, textFor: textFor, favorite: favorite, binding: binding };
+module.exports = { create: create, textFor: textFor, favorite: favorite, binding: binding, direct: direct, selection: selection };

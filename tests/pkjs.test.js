@@ -151,6 +151,15 @@ test('generated config Save returns the selected block size', () => {
   assert.equal(saved.LargeBlocks, 1);
   assert.equal(saved.HourLeadingZero, 0);
   assert.equal(saved.PluginFavoriteTopRight, 2);
+  // Hidden fields can be restored by the webview independently of visible controls.
+  for (const malformed of ['%broken', encodeURIComponent('{bad json')]) {
+    fields.PluginSourceTopLeft = { value: malformed };
+    fields.save.onclick();
+    const recovered = JSON.parse(decodeURIComponent(result.split('#')[1]));
+    assert.equal(recovered.PluginSourceTopLeft, null);
+    assert.equal(recovered.LargeBlocks, 1);
+    assert.equal(recovered.PluginFavoriteTopRight, 2);
+  }
 });
 
 
@@ -192,7 +201,7 @@ test('disabled or denied plugins retain built-in choices and saved favorites', (
   assert.equal(app.messages.at(-1).PluginTTL, 0);
   app.events.showConfiguration();
   assert.match(app.html(), /<h3>Top left<\/h3>/);
-  assert.match(app.html(), /Favorite 5<\/option>/);
+  assert.match(app.html(), /Fav 5<\/option>/);
 });
 
 test('old settings pages preserve saved favorite choices', () => {
@@ -263,8 +272,8 @@ test('configuration shows named favorites safely and retains an unconfigured sav
   const html = f.html();
   assert.match(html, />Show<\/label>/);
   assert.match(html, />When unavailable<\/label>/);
-  assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
-  assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
+  assert.match(html, /Fav 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
+  assert.match(html, /value="105" selected>Fav 5 — Not configured/);
   assert.match(html, /Settings → Plugins → Complications/);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].category, 'preferences');
@@ -333,7 +342,7 @@ test('async lookup shows fresh names on the first opening and bounds slow lookup
   assert.equal(requests.length, 1, 'concurrent openings share the pending lookup');
   requests[0].onData(envelope('temperature'));
   assert.equal(app.opened.length, 1);
-  assert.match(app.html(), /Favorite 1 — Weather \/ Location 1 \/ Temperature/);
+  assert.match(app.html(), /Fav 1 — Weather \/ Location 1 \/ Temperature/);
   assert.equal(stopped, 1);
   // Fresh data must replace cached names in this opening, including after restart.
   const restarted = phone('emery', undefined, { subscribeToSource(request) {
@@ -341,18 +350,18 @@ test('async lookup shows fresh names on the first opening and bounds slow lookup
   } }, app.storage);
   restarted.events.showConfiguration();
   requests[1].onData(envelope('humidity'));
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/);
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/);
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'timeout uses cache');
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/, 'timeout uses cache');
   const opens = restarted.opened.length;
   requests[2].onData({ instances: [] });
   assert.equal(restarted.opened.length, opens, 'late reply cannot reopen settings');
   restarted.events.showConfiguration();
   requests[3].onError({});
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'errors retain cache');
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/, 'errors retain cache');
   restarted.events.showConfiguration();
   requests[4].onData({ instances: [] });
-  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'empty list replaces cache immediately');
+  assert.match(restarted.html(), /Fav 1 — Not configured/, 'empty list replaces cache immediately');
 });
 
 test('unknown or invalid cache uses neutral names when the live lookup fails', () => {
@@ -363,7 +372,7 @@ test('unknown or invalid cache uses neutral names when the live lookup fails', (
     } }, storage);
     app.events.showConfiguration();
     assert.equal(app.opened.length, 0);
-    assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+    assert.match(app.html(), /value="101">Fav 1<\/option>/);
     assert.equal(app.opened.length, 1);
   }
 });
@@ -375,6 +384,70 @@ test('fresh labels display even when cache storage fails', () => {
   app.context.localStorage.setItem = () => { throw new Error('storage full'); };
   app.events.showConfiguration();
   assert.equal(app.opened.length, 1);
-  assert.match(app.html(), /Favorite 1 — Unavailable/);
-  assert.match(app.html(), /Favorite 2 — Not configured/);
+  assert.match(app.html(), /Fav 1 — Unavailable/);
+  assert.match(app.html(), /Fav 2 — Not configured/);
+});
+
+test('direct bindings survive restart and legacy saves without entering the watch dictionary', () => {
+  const source = { plugin: null, category: 'weather', item: 'location', property: 'humidity', instanceId: 'home' };
+  const app = phone('emery', JSON.stringify({ PluginSourceTopLeft: source }));
+  assert.deepEqual(JSON.parse(JSON.stringify(app.context.loadSettings().PluginSourceTopLeft)), source);
+  app.events.ready();
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 6);
+  assert.ok(app.messages.every(m => !('PluginSourceTopLeft' in m)));
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(app.context.cloneDefaults())) });
+  assert.deepEqual(JSON.parse(app.storage.get('pebble-minute-blocks-settings')).PluginSourceTopLeft, source);
+});
+test('catalog and saved bindings are safely embedded, including unavailable sources', () => {
+  const saved = { plugin: 'missing', category: 'weather', item: 'location', property: '</script>', instanceId: 'home' };
+  const app = phone('emery', JSON.stringify({ PluginSourceTopLeft: saved }), {
+    subscribeToSource() {}, enumeratePlugins: () => []
+  });
+  app.events.showConfiguration(); const html = app.html();
+  assert.match(html, /value="200" selected>weather \/ location \(unavailable\)/);
+  assert.equal((html.match(/<\/script>/g) || []).length, 1);
+  new vm.Script(html.match(/<script>([\s\S]*)<\/script>/)[1]);
+});
+test('direct controls hide on old companions and hidden chalk slots preserve choices', () => {
+  const source = { plugin: 'weather', category: 'weather', item: 'location', property: 'humidity', instanceId: 'home' };
+  const old = phone('aplite', JSON.stringify({ PluginSourceTopLeft: source }));
+  old.events.showConfiguration(); assert.doesNotMatch(old.html(), /id="sourceControlsTopLeft"/);
+  assert.match(old.html(), /id="PluginSourceTopLeft" type="hidden"/);
+  const round = phone('chalk', JSON.stringify({ PluginSourceBottomRight: source }), { subscribeToSource() {} });
+  round.events.showConfiguration(); assert.doesNotMatch(round.html(), /id="sourceControlsBottomRight"/);
+  assert.match(round.html(), /id="PluginSourceBottomRight" type="hidden"/);
+});
+
+test('saving a direct reading routes live data and switching back to a favorite removes it', () => {
+  const subscriptions = [];
+  const app = phone('emery', undefined, { subscribeToSource(config) {
+    subscriptions.push(config); return { unsubscribe() {} };
+  } });
+  const settings = app.context.cloneDefaults();
+  settings.PluginSourceTopLeft = { plugin: 'stock-provider', category: 'finance', item: 'stock', property: 'price', instanceId: 'AAPL' };
+  settings.PluginFavoriteTopLeft = 3;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
+  assert.equal(subscriptions[0].plugin, 'stock-provider');
+  assert.equal(app.messages[1].PluginFavoriteTopLeft, 6);
+  subscriptions[0].onData({ pluginUuid: 'stock-provider', validUntilMs: Date.now() + 60000,
+    instances: [{ instanceId: 'AAPL', properties: { price: { numericValue: { value: 123.4, unit: '$' } } } }] });
+  assert.equal(app.messages.at(-1).PluginText, '123.4$');
+  settings.PluginSourceTopLeft = null;
+  settings.PluginFavoriteTopLeft = 2;
+  app.events.webviewclosed({ response: encodeURIComponent(JSON.stringify(settings)) });
+  assert.equal(app.context.loadSettings().PluginSourceTopLeft, null);
+  assert.equal(app.messages.filter(m => m.PluginFavoriteTopLeft !== undefined).at(-1).PluginFavoriteTopLeft, 2);
+});
+
+test('watch clock reports reach calendar formatting even with weather disabled', () => {
+  const subs = [];
+  const app = phone('emery', JSON.stringify({ WeatherEnabled: 0, TimeMode: 0,
+    PluginSourceTopLeft: { plugin: null, category: 'calendar', item: 'event', property: 'starts_at', instanceId: null }
+  }), { subscribeToSource(config) { subs.push(config); return { unsubscribe() {} }; } });
+  app.events.appmessage({ payload: { Watch24Hour: 0, WeatherRequest: 0 } });
+  subs.at(-1).onData({ instances: [{ properties: { starts_at: {
+    timestamp: { value: new Date(2026, 10, 6, 8, 0).getTime() / 1000 }, shortText: { text: '08:00' }
+  } } }] });
+  assert.equal(app.messages.at(-1).PluginText, '8:00A');
+  assert.equal(app.requests.length, 0);
 });

@@ -9,12 +9,12 @@ const entry = (category, item, property, index = 0) => ({ properties: {
 test('favorite labels describe the configured binding without fetching its data', () => {
   assert.deepEqual(favorites.labels([entry('weather', 'location', 'temperature'),
     entry('phone', 'state', 'battery_percent', 1)]), [
-    'Favorite 1 — Weather / Location 1 / Temperature',
-    'Favorite 2 — Phone / State 2 / Battery Percent',
-    'Favorite 3 — Not configured', 'Favorite 4 — Not configured', 'Favorite 5 — Not configured'
+    'Fav 1 — Weather / Location 1 / Temperature',
+    'Fav 2 — Phone / State 2 / Battery Percent',
+    'Fav 3 — Not configured', 'Fav 4 — Not configured', 'Fav 5 — Not configured'
   ]);
-  assert.equal(favorites.labels(null)[0], 'Favorite 1');
-  assert.equal(favorites.labels([{}])[0], 'Favorite 1 — Unavailable');
+  assert.equal(favorites.labels(null)[0], 'Fav 1');
+  assert.equal(favorites.labels([{}])[0], 'Fav 1 — Unavailable');
 });
 
 test('synchronous preference reply unsubscribes and completes exactly once', () => {
@@ -40,7 +40,7 @@ test('timeout returns unknown labels and ignores late metadata callbacks', () =>
   labels => results.push(labels));
   timeout(); request.onData({ instances: [] }); request.onError({});
   assert.equal(stopped, 1); assert.equal(results.length, 1);
-  assert.equal(results[0][0], 'Favorite 1');
+  assert.equal(results[0][0], 'Fav 1');
 });
 
 test('missing API, thrown errors and malformed payloads return neutral labels', () => {
@@ -48,6 +48,6 @@ test('missing API, thrown errors and malformed payloads return neutral labels', 
     { subscribeToSource(config) { config.onData({}); return { unsubscribe() {} }; } }]) {
     const results = [];
     favorites.load(api, () => 1, () => {}, labels => results.push(labels));
-    assert.equal(results.length, 1); assert.equal(results[0][0], 'Favorite 1');
+    assert.equal(results.length, 1); assert.equal(results[0][0], 'Fav 1');
   }
 });

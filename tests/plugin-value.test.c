@@ -22,11 +22,13 @@ int main(void) {
   assert(plugin_reading_set(&reading, 1, "", 0, now));
   assert(!plugin_value_apply(&value, &reading, 1, now));
   assert(!plugin_reading_set(&reading, 0, "x", 60, now));
-  assert(!plugin_reading_set(&reading, 6, "x", 60, now));
+  assert(!plugin_reading_set(&reading, 7, "x", 60, now));
   assert(!plugin_reading_set(&reading, 1, "12345678", 60, now));
   assert(!plugin_reading_set(&reading, 1, "bad\n", 60, now));
   assert(!plugin_reading_set(&reading, 1, "x", 901, now));
   assert(!plugin_reading_set(&reading, 1, "x", -1, now));
+  assert(plugin_reading_set(&reading, 6, "40%", 60, now));
+  assert(plugin_value_apply(&value, &reading, 6, now));
   PluginReading before;
   assert(plugin_reading_set(&reading, 1, "72F", 60, now));
   before = reading;

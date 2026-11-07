@@ -1610,24 +1610,59 @@ static void settings_save(void) {
   persist_write_bool(PersistKeyLargeBlocks, s_settings.large_blocks);
 }
 
-static void request_weather(void) {
-  if (!s_settings.weather_enabled) {
-    return;
+// Report clock changes only for plugin users following the watch clock.
+// Weather keeps its existing half-hour cadence; a quiet face sends nothing.
+static int s_reported_clock_style = -1;
+static int s_pending_clock_style = -1;
+static time_t s_phone_update_started;
+
+static void phone_update_sent(DictionaryIterator *iter, void *context) {
+  (void)iter;
+  (void)context;
+  s_reported_clock_style = s_pending_clock_style;
+  s_pending_clock_style = -1;
+}
+
+static void phone_update_failed(DictionaryIterator *iter, AppMessageResult reason, void *context) {
+  (void)iter;
+  (void)reason;
+  (void)context;
+  s_reported_clock_style = -1;
+  s_pending_clock_style = -1;
+}
+
+static void update_phone(bool weather_due) {
+  // Do not let a missing SDK callback suppress future clock/weather updates.
+  // The SDK still owns outbox availability if the underlying send is busy.
+  time_t now = time(NULL);
+  if (s_pending_clock_style != -1 &&
+      (now < s_phone_update_started || now - s_phone_update_started >= 60)) {
+    s_pending_clock_style = -1;
+    s_reported_clock_style = -1;
   }
+  bool plugins_enabled = false;
+  for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
+    if (s_plugin_favorites[slot]) plugins_enabled = true;
+  }
+  bool weather = weather_due && s_settings.weather_enabled;
+  int style = clock_is_24h_style() ? 1 : 0;
+  bool clock_changed = plugins_enabled && s_settings.time_mode == TimeModeWatch &&
+                       style != s_reported_clock_style;
+  if ((!weather && !clock_changed) || s_pending_clock_style != -1) return;
 
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
-  if (result != APP_MSG_OK || !iter) {
-    return;
-  }
-
-  dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, 1);
-  app_message_outbox_send();
+  if (result != APP_MSG_OK || !iter) return;
+  dict_write_uint8(iter, MESSAGE_KEY_WeatherRequest, weather ? 1 : 0);
+  dict_write_uint8(iter, MESSAGE_KEY_Watch24Hour, style);
+  s_pending_clock_style = style;
+  s_phone_update_started = now;
+  if (app_message_outbox_send() != APP_MSG_OK) s_pending_clock_style = -1;
 }
 
-static void request_weather_timer_handler(void *context) {
+static void initial_phone_update(void *context) {
   (void)context;
-  request_weather();
+  update_phone(true);
 }
 
 // Plugin packets have their own small dictionaries and never rewrite all saved
@@ -1671,7 +1706,7 @@ static bool receive_plugin_message(DictionaryIterator *iter) {
     handled = true;
     if ((choice->type != TUPLE_INT && choice->type != TUPLE_UINT) ||
         choice->length != sizeof(int32_t) ||
-        choice->value->int32 < 0 || choice->value->int32 > 5) continue;
+        choice->value->int32 < 0 || choice->value->int32 > PLUGIN_DIRECT_SOURCE) continue;
     int favorite = choice->value->int32;
     if (favorite != s_plugin_favorites[slot]) {
       s_plugin_favorites[slot] = favorite;
@@ -1684,7 +1719,11 @@ static bool receive_plugin_message(DictionaryIterator *iter) {
 }
 
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
-  receive_plugin_message(iter);
+  bool plugin_message = receive_plugin_message(iter);
+  // Selection packets are also sent when the phone JS restarts. Resend the
+  // style then, even if the watch itself has not restarted or changed style.
+  bool plugin_selection = plugin_message && !dict_find(iter, MESSAGE_KEY_PluginSlot);
+  if (plugin_selection) s_reported_clock_style = -1;
   Tuple *background = dict_find(iter, MESSAGE_KEY_BackgroundColor);
   Tuple *ring = dict_find(iter, MESSAGE_KEY_RingColor);
   Tuple *complication = dict_find(iter, MESSAGE_KEY_ComplicationColor);
@@ -1713,7 +1752,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
         complication_size || weather_enabled || weather_units || weather_temp || weather_available ||
         weather_high || weather_low || complication_visibility || complication_top_left ||
         complication_top_right || complication_bottom_right || complication_bottom_left ||
-        seconds_visibility || kinetic_enabled || large_blocks)) return;
+        seconds_visibility || kinetic_enabled || large_blocks)) {
+    if (plugin_selection) update_phone(false);
+    return;
+  }
 
   if (background) {
     s_settings.background_color = background->value->uint32;
@@ -1816,6 +1858,7 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   }
 
   settings_save();
+  if (plugin_selection || time_mode) update_phone(false);
   refresh_steps();
   update_backlight_subscription();
   update_tick_subscription();
@@ -1841,9 +1884,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
     if ((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0) {
       refresh_steps();
-      if (tick_time->tm_min % 30 == 0) {
-        request_weather();
-      }
+      update_phone(tick_time->tm_min % 30 == 0);
     }
   }
 
@@ -2119,7 +2160,7 @@ static void init(void) {
   settings_load();
   for (int slot = 0; slot < COMPLICATION_SLOT_COUNT; slot++) {
     int favorite = persist_read_int(PLUGIN_PERSIST_KEYS[slot]);
-    s_plugin_favorites[slot] = favorite >= 1 && favorite <= 5 ? favorite : 0;
+    s_plugin_favorites[slot] = favorite >= 1 && favorite <= PLUGIN_DIRECT_SOURCE ? favorite : 0;
   }
   fonts_load();
   refresh_time();
@@ -2155,11 +2196,14 @@ static void init(void) {
 #endif
   update_backlight_subscription();
   app_message_register_inbox_received(inbox_received_handler);
+  // update_phone is the sole outbox sender; these callbacks track its reports.
+  app_message_register_outbox_sent(phone_update_sent);
+  app_message_register_outbox_failed(phone_update_failed);
   app_message_open(256, 256);
 
   intro_start();
   window_stack_push(s_window, false);
-  app_timer_register(1000, request_weather_timer_handler, NULL);
+  app_timer_register(1000, initial_phone_update, NULL);
 }
 
 static void deinit(void) {

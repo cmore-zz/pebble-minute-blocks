@@ -13,7 +13,7 @@ function labels(entries) {
     var description = !entries ? '' : !entries[i] ? 'Not configured' :
       target ? readable(target[0]) + ' / ' + readable(target[1]) + ' ' + (target[3] + 1) +
         ' / ' + readable(target[2]) : 'Unavailable';
-    result.push('Favorite ' + (i + 1) + (description ? ' — ' + description : ''));
+    result.push('Fav ' + (i + 1) + (description ? ' — ' + description : ''));
   }
   return result;
 }

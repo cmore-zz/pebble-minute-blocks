@@ -506,7 +506,7 @@ function cachedFavoriteLabels() {
     var labels = JSON.parse(localStorage.getItem(FAVORITE_LABELS_KEY));
     if (Array.isArray(labels) && labels.length === 5 && labels.every(function(label) {
       return typeof label === 'string' && label.length <= 256;
-    })) return labels;
+    })) return labels.map(function(label) { return label.replace(/^Favorite ([1-5])(?= — |$)/, 'Fav $1'); });
   } catch (e) { /* Missing or damaged cache must not prevent opening settings. */ }
   return pluginFavorites.labels(null);
 }

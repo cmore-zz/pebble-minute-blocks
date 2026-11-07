@@ -201,7 +201,7 @@ test('disabled or denied plugins retain built-in choices and saved favorites', (
   assert.equal(app.messages.at(-1).PluginTTL, 0);
   app.events.showConfiguration();
   assert.match(app.html(), /<h3>Top left<\/h3>/);
-  assert.match(app.html(), /Favorite 5<\/option>/);
+  assert.match(app.html(), /Fav 5<\/option>/);
 });
 
 test('old settings pages preserve saved favorite choices', () => {
@@ -272,8 +272,8 @@ test('configuration shows named favorites safely and retains an unconfigured sav
   const html = f.html();
   assert.match(html, />Show<\/label>/);
   assert.match(html, />When unavailable<\/label>/);
-  assert.match(html, /Favorite 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
-  assert.match(html, /value="105" selected>Favorite 5 — Not configured/);
+  assert.match(html, /Fav 1 — Weather \/ Location 1 \/ &lt;Script&gt;&amp;Temperature/);
+  assert.match(html, /value="105" selected>Fav 5 — Not configured/);
   assert.match(html, /Settings → Plugins → Complications/);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].category, 'preferences');
@@ -342,7 +342,7 @@ test('async lookup shows fresh names on the first opening and bounds slow lookup
   assert.equal(requests.length, 1, 'concurrent openings share the pending lookup');
   requests[0].onData(envelope('temperature'));
   assert.equal(app.opened.length, 1);
-  assert.match(app.html(), /Favorite 1 — Weather \/ Location 1 \/ Temperature/);
+  assert.match(app.html(), /Fav 1 — Weather \/ Location 1 \/ Temperature/);
   assert.equal(stopped, 1);
   // Fresh data must replace cached names in this opening, including after restart.
   const restarted = phone('emery', undefined, { subscribeToSource(request) {
@@ -350,18 +350,18 @@ test('async lookup shows fresh names on the first opening and bounds slow lookup
   } }, app.storage);
   restarted.events.showConfiguration();
   requests[1].onData(envelope('humidity'));
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/);
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/);
   restarted.events.showConfiguration();
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'timeout uses cache');
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/, 'timeout uses cache');
   const opens = restarted.opened.length;
   requests[2].onData({ instances: [] });
   assert.equal(restarted.opened.length, opens, 'late reply cannot reopen settings');
   restarted.events.showConfiguration();
   requests[3].onError({});
-  assert.match(restarted.html(), /Favorite 1 — Weather \/ Location 1 \/ Humidity/, 'errors retain cache');
+  assert.match(restarted.html(), /Fav 1 — Weather \/ Location 1 \/ Humidity/, 'errors retain cache');
   restarted.events.showConfiguration();
   requests[4].onData({ instances: [] });
-  assert.match(restarted.html(), /Favorite 1 — Not configured/, 'empty list replaces cache immediately');
+  assert.match(restarted.html(), /Fav 1 — Not configured/, 'empty list replaces cache immediately');
 });
 
 test('unknown or invalid cache uses neutral names when the live lookup fails', () => {
@@ -372,7 +372,7 @@ test('unknown or invalid cache uses neutral names when the live lookup fails', (
     } }, storage);
     app.events.showConfiguration();
     assert.equal(app.opened.length, 0);
-    assert.match(app.html(), /value="101">Favorite 1<\/option>/);
+    assert.match(app.html(), /value="101">Fav 1<\/option>/);
     assert.equal(app.opened.length, 1);
   }
 });
@@ -384,8 +384,8 @@ test('fresh labels display even when cache storage fails', () => {
   app.context.localStorage.setItem = () => { throw new Error('storage full'); };
   app.events.showConfiguration();
   assert.equal(app.opened.length, 1);
-  assert.match(app.html(), /Favorite 1 — Unavailable/);
-  assert.match(app.html(), /Favorite 2 — Not configured/);
+  assert.match(app.html(), /Fav 1 — Unavailable/);
+  assert.match(app.html(), /Fav 2 — Not configured/);
 });
 
 test('direct bindings survive restart and legacy saves without entering the watch dictionary', () => {

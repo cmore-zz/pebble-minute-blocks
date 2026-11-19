@@ -20,6 +20,10 @@ big round Pebble Round 2 / `gabbro`.
 | ![Minute Blocks on Pebble / Pebble 2](store-assets/screenshots/aplite-normal.png) | ![Minute Blocks on Pebble Time Round](store-assets/screenshots/chalk-normal.png) | ![Minute Blocks on Pebble Round 2](store-assets/screenshots/gabbro-normal.png) | ![Minute Blocks on Pebble Time 2](store-assets/screenshots/emery-normal.png) |
 | ![Minute Blocks on Pebble / Pebble 2 with complications visible](store-assets/screenshots/aplite-active.png) | ![Minute Blocks on Pebble Time Round with complications visible](store-assets/screenshots/chalk-active.png) | ![Minute Blocks on Pebble Round 2 with complications visible](store-assets/screenshots/gabbro-active.png) | ![Minute Blocks on Pebble Time 2 with complications visible](store-assets/screenshots/emery-active.png) |
 
+Pebble Time 2 with Large blocks and no complications:
+
+![Minute Blocks on Pebble Time 2, Large size without complications](store-assets/screenshots/emery-blocks-large.png)
+
 The complication text uses the Visitor bitmap font by Ænigma, distributed via
 DaFont as 100% free. It is bundled at 15, 20, and 25 px sizes so the small
 status labels and numbers stay crisp on low-resolution Pebble screens.
@@ -39,8 +43,10 @@ When a five-minute marker completes the four blocks stretch apart and smash
 together, and at the top of each hour every block cascades off the bottom.
 PT2 Large mode mixes larger chips into the fragment burst for better visibility.
 
-*(Captured on the emulator at ~10 fps; the animations run smoothly at 30 fps on
-real hardware.)*
+<img src="store-assets/animations/emery-large-smash-and-cascade.gif" width="200" alt="Pebble Time 2 Large blocks smashing and cascading without complications">
+
+Rendered frame by frame at 50 fps, at each platform's native resolution. The
+PT2 clip uses Large blocks with no complications.
 
 In PT2 Large mode, the final launch pulse breathes inward to keep the blocks
 inside the display; Normal mode retains the outward pulse.
@@ -284,37 +290,37 @@ just screenshots
 
 ### Animations
 
-The kinetic demo GIFs in `store-assets/animations/` are captured from an emulator
-with `scripts/capture-animation.py`, which jumps the clock to an animation's
-trigger, enables Kinetic mode, burst-grabs frames, and writes a looping GIF.
-Install the build on the emulator first, then capture (`--scale 1` for native
-144×168, store-ready size):
+The kinetic demo GIFs in `store-assets/animations/` are rendered by
+`scripts/capture-animation.py`. It builds a temporary, isolated capture PBW,
+then advances a hidden clock by exactly 20 ms for each 50 fps output frame.
+Each requested time is acknowledged and its rendered watch framebuffer is saved
+before advancing. Simulator stalls slow the recording without skipping motion.
+Static padding is trimmed to a 200 ms lead-in and a 700 ms final hold; the
+wind-up and moving frames retain their original timing.
+The normal PBW and watchface exclude these hidden controls.
 
 ```sh
-just install --emulator basalt
-just capture-animation --scale 1 --at 10:44:57 --duration 3.5 --out /tmp/smash.gif
+just capture-animation --scale 1 --at 10:25:57 --duration 4 --out store-assets/animations/falling-block.gif
+just capture-animation --scale 1 --at 11:59:57 --duration 5.5 --out store-assets/animations/smash-and-cascade.gif
+just capture-animation --emulator emery --large --no-complications --scale 1 --at 11:59:57 --duration 5.5 --out store-assets/animations/emery-large-smash-and-cascade.gif
 ```
 
-(`just capture-animation` runs the script with the SDK's Python; override with
-the `PEBBLE_PYTHON` env var if your SDK lives elsewhere.)
+`--at` is the first rendered frame's displayed time. Use `--fps 25` for 40 ms
+steps, or `--fps 20` for 50 ms steps. Native resolution (`--scale 1`) is required
+for store uploads. `just capture-animation` uses the SDK's Python; override
+`PEBBLE_PYTHON` if needed. No separate install or emulator clock change is needed.
 
-Trigger windows: falling block `--at 10:25:56 --duration 5.0`; smash
-`--at 10:44:57 --duration 3.5`; top-of-hour smash+cascade
-`--at 11:59:57 --duration 4.5`.
+The capture-only build enables `MINUTE_BLOCKS_CAPTURE`, with private AppMessage
+keys 20000 (displayed seconds, encoded in UTC) and 20001 (0–999 milliseconds).
+It stops autonomous animation timers and clock ticks while the override is active.
+The temporary build directory is removed after recording; it does not replace
+`build/pebble-minute-blocks.pbw`.
 
-Notes (see the script's docstring for more):
-- The emulator renders kinetic at only ~10 fps, so the sub-second falling block
-  is choppy; the smash/cascade are long enough to read. Record real hardware for
-  smooth clips.
-- Only basalt/chalk/aplite/diorite take a clock-set — PT2 (`emery`) and Round 2
-  (`gabbro`) emulators don't.
-- Right after install the emulator is pokey, so the first capture often comes
-  out static or partial — just run it again (two or three tries usually works).
-- If captures stay static after retrying, the emulator has wedged: `pebble
-  wipe`, reinstall, retry.
-- Don't post-process with `magick -layers optimize` — it leaves a pixel trail of
-  the block's old positions. Use `-coalesce` if you must re-encode, and rebuild
-  from the relevant frames to trim a clip to just the motion.
+All capture scripts shut down their emulator when finished, including on errors
+and interruption. The screenshot batch finishes one platform before starting
+the next. The single-screenshot helper's `--keep-emulator` option is reserved for
+that batch. Aplite stills use the QEMU framebuffer and a fresh emulator per view;
+active views set complications to always visible, avoiding the legacy tap path.
 
 ## Minute Ring
 

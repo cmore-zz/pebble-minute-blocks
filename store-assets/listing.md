@@ -6,7 +6,7 @@
 - Developer: cmore
 - Category: Faces
 - Type: Watchface
-- Version: 1.5.0
+- Version: 1.5.1
 - Website URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Source code URL: https://github.com/cmore-zz/pebble-minute-blocks
 - Support email: pebble@cmore.org
@@ -41,6 +41,11 @@ Configurable corner complications show date, weather, battery, Bluetooth, or ste
 On launch the face sweeps into place clockwise and settles with a pulse. Two optional extras, both off by default: a subtle SECONDS sweep, and a KINETIC mode that animates the blocks falling into place, smashing together when a marker completes, and cascading off the bottom at the top of the hour.
 
 Pebble Time 2 also offers a LARGE BLOCKS setting for a bolder hour and minute ring. Choose Normal or Large in settings.
+
+## Release Notes — 1.5.1
+
+- Refreshed screenshots and smooth animation previews across supported watches.
+- Added Pebble Time 2 Large-block previews without complications.
 
 ## Release Notes — 1.5.0
 
@@ -137,7 +142,7 @@ The [Visitor](https://www.dafont.com/visitor.font) font is a Freeware font by Ae
 
 PT2 block-size comparison: [`emery-blocks-normal.png`](screenshots/emery-blocks-normal.png)
 and [`emery-blocks-large.png`](screenshots/emery-blocks-large.png). Use the large
-preview as an additional PT2 screenshot when updating the listing.
+preview (without complications) as an additional PT2 screenshot when updating the listing.
 
 Regenerate screenshots with:
 
@@ -149,12 +154,20 @@ The store accepts up to 5 screenshots per platform and supports **animated
 GIFs**, but each must match the platform's native resolution. The clips below
 are 144×168, so they upload to the **basalt** collection. To show the animation
 on another platform, recapture it there at that platform's size:
-`just capture-animation --scale 1 --emulator <platform> ...` (then trim).
+`just capture-animation --scale 1 --emulator <platform> ...`.
 
 ### Animation clips (basalt, 144×168)
 
 - [`animations/falling-block.gif`](animations/falling-block.gif) — a minute block falling into place
 - [`animations/smash-and-cascade.gif`](animations/smash-and-cascade.gif) — marker smash + top-of-hour cascade
+
+### Animation clip (PT2, 200×228)
+
+- [`animations/emery-large-smash-and-cascade.gif`](animations/emery-large-smash-and-cascade.gif) — Large blocks, no complications, marker smash + top-of-hour cascade
+
+The GIFs render exact 20 ms animation steps at 50 fps in a temporary capture-only
+build. Simulator stalls cannot skip frames. Capture scripts shut down each
+emulator after its platform's assets are finished.
 
 ### Marketing banner
 

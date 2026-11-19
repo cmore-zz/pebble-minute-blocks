@@ -1,125 +1,172 @@
 #!/usr/bin/env python3
-"""Capture a kinetic animation from a Pebble emulator as a GIF.
+"""Render a kinetic GIF at exact millisecond times, independent of simulator speed.
 
-Jumps the emulator clock to just before an animation's trigger, enables Kinetic
-mode, burst-grabs screenshots across the window, and writes a looping GIF whose
-per-frame durations match real time.
+Builds an isolated temporary PBW with MINUTE_BLOCKS_CAPTURE. Hidden keys 20000
+and 20001 select the displayed second and millisecond; real ticks and animation
+timers are disabled while this override is active. The production PBW is untouched.
+Each frame is acknowledged, allowed to finish rendering, and read from the watch
+framebuffer before advancing the clock. Slow captures cannot drop motion frames.
 
-Run it with the Pebble SDK's Python (it needs libpebble2 / pebble_tool), e.g.:
+Examples (run with the Pebble SDK's Python):
+  scripts/capture-animation.py --at 10:25:57 --duration 4 --scale 1 --out /tmp/fall.gif
+  scripts/capture-animation.py --emulator emery --large --no-complications \\
+      --at 11:59:57 --duration 5.5 --scale 1 --out /tmp/cascade.gif
 
-    PEBBLE_PYTHON=~/.local/share/uv/tools/pebble-tool/bin/python3
-    $PEBBLE_PYTHON scripts/capture-animation.py --at 10:44:57 --duration 3.5 \
-        --out /tmp/smash.gif
-
-Trigger windows (each --at is a few seconds before the boundary):
-  * Falling block  : any minute roll; bottom-center is longest/clearest.
-                     --at 10:25:56 --duration 5.0   (block falls by 10:26:00)
-  * Smash          : a minute ending in 4 or 9 (marker completes next minute).
-                     --at 10:44:57 --duration 3.5   (smash into 10:45:00)
-  * Smash + cascade: top of the hour (the :59 marker smashes, then all cascade).
-                     --at 11:59:57 --duration 4.5   (cascade after 12:00:00)
-
-Gotchas (learned the hard way):
-  * The emulator renders kinetic at only ~10 fps, so sub-second clips (the
-    falling block) come out choppy; the smash/cascade are long enough to read.
-    For listing-quality smoothness, record real hardware instead.
-  * PT2 (emery) and Round 2 (gabbro) emulators won't accept a clock-set, so this
-    only works on basalt/chalk/aplite/diorite.
-  * Right after `pebble install` the emulator is extra slow to warm up, so the
-    first capture often comes out static or partial -- just run it again (two or
-    three tries usually catches it).
-  * If captures stay static after retrying, the emulator has wedged: `pebble
-    wipe` and reinstall, then retry.
-  * This writes full (un-optimized) frames on purpose. Do NOT post-process with
-    `magick -layers optimize` -- its frame differencing leaves a pixel trail of
-    the block's previous positions. Use `magick -coalesce` if you must re-encode.
-  * To tighten a clip to just the motion, coalesce and rebuild from the frames
-    that matter, e.g.:
-        magick in.gif -coalesce f_%03d.png
-        magick -loop 0 -delay 9 f_003.png ... f_010.png -delay 90 f_010.png out.gif
+The emulator is shut down on completion, failure, or interruption.
 """
 import argparse
 import datetime
-import io
+import os
+from pathlib import Path
+import queue
+import shutil
+import signal
+import subprocess
+import tempfile
 import time
 import uuid
 
-import png
 from PIL import Image
-
 from libpebble2.communication import PebbleConnection
-from libpebble2.protocol.system import SetUTC, TimeMessage
 from libpebble2.services.appmessage import AppMessageService, Int32
 from pebble_tool.commands.screenshot import ScreenshotCommand
 from pebble_tool.sdk import sdk_manager
 from pebble_tool.sdk.emulator import ManagedEmulatorTransport
 
 APP_UUID = uuid.UUID("4e10c644-2684-4604-aaf3-be90703b8d95")
-KEY_KINETIC_ENABLED = 10019
+CAPTURE_SECONDS_KEY = 20000
+CAPTURE_MILLISECONDS_KEY = 20001
 
 
-def set_time(p, hh, mm, ss):
-  now = datetime.datetime.now().replace(hour=hh, minute=mm, second=ss, microsecond=0)
-  ts = int(now.timestamp())
-  off = -time.altzone if time.localtime(ts).tm_isdst and time.daylight else -time.timezone
-  tzm = off // 60
-  p.send_packet(TimeMessage(message=SetUTC(unix_time=ts, utc_offset=tzm,
-                                           tz_name="UTC%+d" % (tzm // 60))))
+def build_capture_pbw(directory, platform):
+  """Compile the current source in isolation, with private capture controls."""
+  import json
+  root = Path(__file__).resolve().parent.parent
+  for name in ("src", "resources"):
+    shutil.copytree(root / name, directory / name)
+  shutil.copy2(root / "wscript", directory / "wscript")
+  manifest = json.loads((root / "package.json").read_text())
+  manifest["pebble"]["targetPlatforms"] = [platform]
+  (directory / "package.json").write_text(json.dumps(manifest))
+  env = dict(os.environ, MINUTE_BLOCKS_CAPTURE="1")
+  env.pop("CC", None)
+  env.pop("CXX", None)
+  result = subprocess.run(["pebble", "build"], cwd=directory, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+  if result.returncode:
+    raise RuntimeError("Capture build failed:\n" + result.stdout)
+  return next((directory / "build").glob("*.pbw"))
 
 
-def grab(p):
-  cmd = ScreenshotCommand()
-  cmd.pebble = p
-  rows = list(cmd._grab_processed_image(argparse.Namespace(no_correction=False, scale=1)))
-  buf = io.BytesIO()
-  png.from_array(rows, mode="RGBA;8").write(buf)
-  buf.seek(0)
-  return Image.open(buf).convert("RGB")
+
+def trim_static_padding(frames, frame_ms, lead_ms=200, tail_ms=700):
+  """Keep a short lead-in and final hold without altering motion or wind-up."""
+  first = frames[0].tobytes()
+  first_change = next((i for i, frame in enumerate(frames) if frame.tobytes() != first), None)
+  if first_change is None:
+    return frames[:1], [max(frame_ms, lead_ms + tail_ms)]
+  last = frames[-1].tobytes()
+  last_change = next(i for i in range(len(frames) - 1, -1, -1)
+                     if frames[i].tobytes() != last)
+  start = max(0, first_change - (lead_ms + frame_ms - 1) // frame_ms)
+  result = frames[start:min(len(frames), last_change + 2)]
+  durations = [frame_ms] * len(result)
+  durations[-1] = max(frame_ms, tail_ms)
+  return result, durations
 
 
 def main():
-  ap = argparse.ArgumentParser()
-  ap.add_argument("--emulator", default="basalt")
-  ap.add_argument("--at", required=True, help="HH:MM:SS to jump to before capturing")
-  ap.add_argument("--duration", type=float, default=4.0)
+  ap = argparse.ArgumentParser(description=__doc__)
+  ap.add_argument("--emulator", default="basalt",
+                  choices=("aplite", "basalt", "chalk", "diorite", "emery", "flint", "gabbro"))
+  ap.add_argument("--at", required=True, help="first rendered time, HH:MM:SS")
+  ap.add_argument("--duration", type=float, default=5.5)
+  ap.add_argument("--fps", type=int, choices=(20, 25, 50), default=50,
+                  help="output GIF rate; each frame is rendered separately")
+  ap.add_argument("--frame-settle-seconds", type=float, default=0.08,
+                  help="wait after each acknowledged clock override before reading pixels")
+  ap.add_argument("--lead-in-ms", type=int, default=200, help="trim idle lead-in to this duration")
+  ap.add_argument("--tail-ms", type=int, default=700, help="final static hold")
   ap.add_argument("--out", required=True)
   ap.add_argument("--scale", type=int, default=2)
-  ap.add_argument("--no-kinetic", action="store_true", help="skip enabling Kinetic mode")
+  ap.add_argument("--large", action="store_true")
+  ap.add_argument("--no-complications", action="store_true")
+  ap.add_argument("--no-kinetic", action="store_true")
   args = ap.parse_args()
-  hh, mm, ss = (int(x) for x in args.at.split(":"))
-
-  transport = ManagedEmulatorTransport(args.emulator, sdk_manager.get_current_sdk(), False)
-  p = PebbleConnection(transport)
-  p.connect()
-  p.run_async()
+  if args.duration <= 0 or args.scale < 1 or args.frame_settle_seconds < 0 or args.lead_in_ms < 0 or args.tail_ms < 20:
+    ap.error("duration and scale must be positive; frame settle must be nonnegative")
   try:
-    if not args.no_kinetic:
-      AppMessageService(p).send_message(APP_UUID, {KEY_KINETIC_ENABLED: Int32(1)})
-      time.sleep(0.5)
-    set_time(p, hh, mm, ss)
-    time.sleep(0.2)
-    set_time(p, hh, mm, ss)
+    hour, minute, second = (int(part) for part in args.at.split(":"))
+    target = datetime.datetime.now(datetime.timezone.utc).replace(
+      hour=hour, minute=minute, second=second, microsecond=0)
+  except ValueError:
+    ap.error("--at must be a valid HH:MM:SS")
+  def interrupted(signum, frame):
+    raise KeyboardInterrupt
+  signal.signal(signal.SIGTERM, interrupted)
 
-    frames, stamps = [], []
-    start = time.time()
-    while time.time() - start < args.duration:
-      frames.append(grab(p))
-      stamps.append(time.time())
-    durs = [max(40, int((stamps[i + 1] - stamps[i]) * 1000)) if i + 1 < len(stamps) else 700
-            for i in range(len(stamps))]
-    if args.scale != 1:
-      frames = [f.resize((f.width * args.scale, f.height * args.scale), Image.NEAREST)
-                for f in frames]
-    frames[0].save(args.out, save_all=True, append_images=frames[1:],
-                   duration=durs, loop=0, optimize=False)
-    print("wrote %s (%d frames over %.2fs)" % (args.out, len(frames), stamps[-1] - start))
+  sdk = sdk_manager.get_current_sdk()
+  pebble = None
+  try:
+    with tempfile.TemporaryDirectory(prefix="minute-blocks-capture-") as directory:
+      pbw = build_capture_pbw(Path(directory), args.emulator)
+      subprocess.run(["pebble", "install", str(pbw), "--emulator", args.emulator], check=True)
+      pebble = PebbleConnection(ManagedEmulatorTransport(args.emulator, sdk, False))
+      pebble.connect()
+      pebble.run_async()
+      # Allow phone-side startup settings and the launch animation to finish.
+      time.sleep(5)
+      service = AppMessageService(pebble)
+      replies = queue.Queue()
+      service.register_handler("ack", lambda tid, *rest: replies.put((tid, True)))
+      service.register_handler("nack", lambda tid, *rest: replies.put((tid, False)))
+      def send(values):
+        tid = service.send_message(APP_UUID, {key: Int32(value) for key, value in values.items()})
+        deadline = time.monotonic() + 5
+        while True:
+          received, accepted = replies.get(timeout=max(0, deadline - time.monotonic()))
+          if received == tid:
+            if not accepted:
+              raise RuntimeError("Watch rejected the capture frame")
+            return
+      settings = {10019: int(not args.no_kinetic), 10020: int(args.large),
+                  10018: 0, 10013: 1, 10006: 0}
+      if args.no_complications:
+        settings.update({key: 0 for key in range(10014, 10018)})
+      send(settings)
+      command = ScreenshotCommand()
+      command.pebble = pebble
+      screenshot_args = argparse.Namespace(no_correction=False, scale=1)
+      frames = []
+      frame_count = max(1, round(args.duration * args.fps))
+      frame_ms = 1000 // args.fps
+      base_ms = int(target.timestamp()) * 1000
+      print("Rendering %d frames, advancing the hidden clock by %d ms per frame" %
+            (frame_count, frame_ms), flush=True)
+      for index in range(frame_count):
+        seconds, milliseconds = divmod(base_ms + index * frame_ms, 1000)
+        send({CAPTURE_SECONDS_KEY: seconds, CAPTURE_MILLISECONDS_KEY: milliseconds})
+        time.sleep(args.frame_settle_seconds)
+        rows = list(command._grab_processed_image(screenshot_args, show_progress=False))
+        frame = Image.frombytes("RGBA", (len(rows[0]) // 4, len(rows)),
+                                bytes(value for row in rows for value in row))
+        if args.scale != 1:
+          frame = frame.resize((frame.width * args.scale, frame.height * args.scale), Image.Resampling.NEAREST)
+        frames.append(frame)
+        if (index + 1) % args.fps == 0:
+          print("Rendered %d/%d" % (index + 1, frame_count), flush=True)
+      frames, durations = trim_static_padding(frames, frame_ms, args.lead_in_ms, args.tail_ms)
+      frames[0].save(args.out, save_all=True, append_images=frames[1:],
+                     duration=durations, loop=0, optimize=False)
+      print("Wrote %s (%d frames at %d fps)" % (args.out, len(frames), args.fps))
   finally:
-    ws = getattr(getattr(p, "transport", None), "ws", None)
-    if ws is not None:
-      try:
-        ws.close()
-      except Exception:
-        pass
+    try:
+      if pebble is not None:
+        ws = getattr(pebble.transport, "ws", None)
+        if ws is not None:
+          ws.close()
+    finally:
+      ScreenshotCommand._shutdown_platform_emulator(args.emulator, sdk)
 
 
 if __name__ == "__main__":

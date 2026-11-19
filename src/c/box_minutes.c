@@ -226,6 +226,15 @@ typedef struct {
 static Window *s_window;
 static Layer *s_canvas_layer;
 static struct tm s_time;
+#ifdef MINUTE_BLOCKS_CAPTURE
+// Private AppMessage controls compiled only into the temporary capture build.
+// These keys are deliberately absent from the production settings manifest.
+#define CAPTURE_SECONDS_KEY 20000
+#define CAPTURE_MILLISECONDS_KEY 20001
+static bool s_capture_enabled;
+static time_t s_capture_seconds;
+static uint16_t s_capture_milliseconds;
+#endif
 static BatteryChargeState s_battery_state;
 static bool s_bluetooth_connected;
 static int s_steps = -1;
@@ -303,14 +312,32 @@ static int ordered_dot_index(int progress_index) {
   return order[progress_index % DOT_COUNT];
 }
 
-// Single wall-clock read for the kinetic timing helpers. Any of the out-pointers
-// may be NULL. ms_until_minute and ms_after_minute are complementary within the
-// minute (ms_until = 60000 - ms_after). Returns false if the clock is unavailable.
+// Use real wall time normally and the exact requested time in capture builds.
+static void animation_time_ms(time_t *seconds, uint16_t *milliseconds) {
+#ifdef MINUTE_BLOCKS_CAPTURE
+  if (s_capture_enabled) {
+    *seconds = s_capture_seconds;
+    *milliseconds = s_capture_milliseconds;
+    return;
+  }
+#endif
+  time_ms(seconds, milliseconds);
+}
+
+static struct tm *animation_localtime(const time_t *seconds) {
+#ifdef MINUTE_BLOCKS_CAPTURE
+  // Capture timestamps encode the desired displayed time in UTC, independent
+  // of the emulator's saved timezone and host clock.
+  if (s_capture_enabled) return gmtime(seconds);
+#endif
+  return localtime(seconds);
+}
+
 static bool kinetic_now(int *min, int32_t *ms_until_minute, int32_t *ms_after_minute) {
   time_t now;
   uint16_t milliseconds;
-  time_ms(&now, &milliseconds);
-  struct tm *time_now = localtime(&now);
+  animation_time_ms(&now, &milliseconds);
+  struct tm *time_now = animation_localtime(&now);
   if (!time_now) {
     return false;
   }
@@ -1719,6 +1746,27 @@ static bool receive_plugin_message(DictionaryIterator *iter) {
 }
 
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
+#ifdef MINUTE_BLOCKS_CAPTURE
+  Tuple *capture_seconds = dict_find(iter, CAPTURE_SECONDS_KEY);
+  Tuple *capture_ms = dict_find(iter, CAPTURE_MILLISECONDS_KEY);
+  if (capture_seconds || capture_ms) {
+    if (!capture_seconds || !capture_ms ||
+        capture_seconds->type != TUPLE_INT || capture_seconds->length != sizeof(int32_t) ||
+        capture_ms->type != TUPLE_INT || capture_ms->length != sizeof(int32_t) ||
+        capture_seconds->value->int32 < 0 || capture_ms->value->int32 < 0 ||
+        capture_ms->value->int32 > 999) return;
+    s_capture_seconds = capture_seconds->value->int32;
+    s_capture_milliseconds = capture_ms->value->int32;
+    s_capture_enabled = true;
+    s_intro_active = false;
+    intro_update_frame_timer();
+    kinetic_update_frame_timer();
+    kinetic_schedule_arm_timer();
+    refresh_time();
+    if (s_canvas_layer) layer_mark_dirty(s_canvas_layer);
+    return;
+  }
+#endif
   bool plugin_message = receive_plugin_message(iter);
   // Selection packets are also sent when the phone JS restarts. Resend the
   // style then, even if the watch itself has not restarted or changed style.
@@ -1869,7 +1917,10 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
 
 static void refresh_time(void) {
   time_t now = time(NULL);
-  struct tm *tick_time = localtime(&now);
+#ifdef MINUTE_BLOCKS_CAPTURE
+  if (s_capture_enabled) now = s_capture_seconds;
+#endif
+  struct tm *tick_time = animation_localtime(&now);
 
   if (tick_time) {
     s_time = *tick_time;
@@ -1877,6 +1928,9 @@ static void refresh_time(void) {
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
+#ifdef MINUTE_BLOCKS_CAPTURE
+  if (s_capture_enabled) return;
+#endif
   s_time = *tick_time;
   if ((units_changed & MINUTE_UNIT) || tick_time->tm_sec == 0 ||
       ((units_changed & SECOND_UNIT) && seconds_visible())) {
@@ -1999,6 +2053,9 @@ static void update_tick_subscription(void) {
 // just after. Outside those the face sleeps at minute (or second, when the seconds
 // sweep is on) granularity rather than waking 60x/min.
 static bool kinetic_should_run_frame_timer(void) {
+#ifdef MINUTE_BLOCKS_CAPTURE
+  if (s_capture_enabled) return false;
+#endif
   if (!s_settings.kinetic_enabled) {
     return false;
   }
@@ -2104,6 +2161,9 @@ static void kinetic_schedule_arm_timer(void) {
   }
 
   // With per-second ticks the frame timer is armed straight from tick_handler.
+#ifdef MINUTE_BLOCKS_CAPTURE
+  if (s_capture_enabled) return;
+#endif
   if (!s_settings.kinetic_enabled || seconds_visible()) {
     return;
   }

@@ -5,7 +5,6 @@ OUT_DIR="store-assets/screenshots"
 PBW="build/pebble-minute-blocks.pbw"
 PEBBLE_PYTHON="${PEBBLE_PYTHON:-/Users/cmore/.local/share/uv/tools/pebble-tool/bin/python3}"
 PLATFORMS=(basalt chalk emery aplite diorite flint gabbro)
-OVERLAY_PLATFORMS=(basalt emery aplite diorite flint)
 RETRIES="${RETRIES:-3}"
 RETRY_SLEEP="${RETRY_SLEEP:-3}"
 SCREENSHOT_TIME="${SCREENSHOT_TIME:-10:11:00}"
@@ -56,11 +55,9 @@ done
 
 if ((${#SELECTED_PLATFORMS[@]})); then
   PLATFORMS=("${SELECTED_PLATFORMS[@]}")
-  OVERLAY_PLATFORMS=()
   for platform in "${PLATFORMS[@]}"; do
     case "$platform" in
       basalt|emery|aplite|diorite|flint)
-        OVERLAY_PLATFORMS+=("$platform")
         ;;
       chalk|gabbro)
         ;;
@@ -74,6 +71,18 @@ if ((${#SELECTED_PLATFORMS[@]})); then
 fi
 
 mkdir -p "$OUT_DIR"
+
+# Keep only the platform currently being captured alive, including on failure.
+current_platform=""
+cleanup() {
+  if [[ -n "$current_platform" ]]; then
+    "$PEBBLE_PYTHON" -c 'import sys; from pebble_tool.commands.screenshot import ScreenshotCommand; ScreenshotCommand._shutdown_platform_emulator(sys.argv[1], None)' "$current_platform"
+    current_platform=""
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 just build
 
@@ -153,9 +162,17 @@ capture_screenshot() {
   local platform="$1"
   local mode="$2"
   local output="$3"
+  # Legacy aplite is unstable across successive captures. Use a fresh emulator
+  # for each view; the other platforms share one emulator for their whole batch.
+  if [[ "$platform" == "aplite" && "$mode" != "normal" ]]; then
+    cleanup
+    current_platform="$platform"
+    install_platform "$platform"
+  fi
   local args=(
     scripts/capture-one-screenshot.py
     --emulator "$platform"
+    --keep-emulator
     --time "$SCREENSHOT_TIME"
     --battery-percent "$SCREENSHOT_BATTERY_PERCENT"
     --settle-seconds "$SCREENSHOT_SETTLE_SECONDS"
@@ -167,6 +184,10 @@ capture_screenshot() {
     args+=(--overlay)
   elif [[ "$mode" == "overlay-active" ]]; then
     args+=(--overlay --tap)
+  elif [[ "$mode" == "blocks-normal" ]]; then
+    args+=(--block-size normal --no-complications)
+  elif [[ "$mode" == "blocks-large" ]]; then
+    args+=(--block-size large --no-complications)
   fi
 
   args+=("$output")
@@ -174,6 +195,7 @@ capture_screenshot() {
 }
 
 for platform in "${PLATFORMS[@]}"; do
+  current_platform="$platform"
   echo "==> ${platform}: install"
   install_platform "$platform"
 
@@ -182,14 +204,20 @@ for platform in "${PLATFORMS[@]}"; do
 
   echo "==> ${platform}: active screenshot"
   capture_screenshot "$platform" active "$OUT_DIR/${platform}-active.png"
-done
 
-for platform in "${OVERLAY_PLATFORMS[@]}"; do
-  echo "==> ${platform}: overlay screenshot"
-  capture_screenshot "$platform" overlay "$OUT_DIR/${platform}-overlay.png"
+  if [[ "$platform" == "emery" ]]; then
+    capture_screenshot "$platform" blocks-normal "$OUT_DIR/emery-blocks-normal.png"
+    capture_screenshot "$platform" blocks-large "$OUT_DIR/emery-blocks-large.png"
+  fi
 
-  echo "==> ${platform}: overlay active screenshot"
-  capture_screenshot "$platform" overlay-active "$OUT_DIR/${platform}-overlay-active.png"
+  if [[ "$platform" != "chalk" && "$platform" != "gabbro" ]]; then
+    echo "==> ${platform}: overlay screenshot"
+    capture_screenshot "$platform" overlay "$OUT_DIR/${platform}-overlay.png"
+
+    echo "==> ${platform}: overlay active screenshot"
+    capture_screenshot "$platform" overlay-active "$OUT_DIR/${platform}-overlay-active.png"
+  fi
+  cleanup
 done
 
 echo "Screenshots written to $OUT_DIR"
